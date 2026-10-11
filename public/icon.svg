@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="50%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  
+  <!-- Rounded Base Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)"/>
+  
+  <!-- Machine / Dashboard Frame -->
+  <g filter="url(#shadow)">
+    <!-- Device Screen Base -->
+    <rect x="96" y="80" width="320" height="352" rx="36" fill="#0f172a" stroke="#6366f1" stroke-width="8"/>
+    
+    <!-- Top Bar -->
+    <rect x="124" y="112" width="264" height="24" rx="8" fill="#1e293b"/>
+    <circle cx="144" cy="124" r="5" fill="#ef4444"/>
+    <circle cx="162" cy="124" r="5" fill="#f59e0b"/>
+    <circle cx="180" cy="124" r="5" fill="#10b981"/>
+    
+    <!-- Match Rows Simulation -->
+    <rect x="124" y="156" width="264" height="42" rx="12" fill="#1e1b4b" stroke="#818cf8" stroke-width="2"/>
+    <rect x="144" y="172" width="80" height="10" rx="5" fill="#a5b4fc"/>
+    <rect x="290" y="172" width="70" height="10" rx="5" fill="url(#accent)"/>
+    
+    <!-- Connected Rep Rows (Underneath) -->
+    <rect x="144" y="210" width="244" height="38" rx="10" fill="#1e293b"/>
+    <path d="M134 198 L134 229 L142 229" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+    <rect x="160" y="223" width="90" height="12" rx="6" fill="#94a3b8"/>
+    <rect x="290" y="223" width="70" height="12" rx="6" fill="#38bdf8"/>
+    
+    <rect x="144" y="258" width="244" height="38" rx="10" fill="#1e293b"/>
+    <path d="M134 229 L134 277 L142 277" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+    <rect x="160" y="271" width="100" height="12" rx="6" fill="#94a3b8"/>
+    <rect x="290" y="271" width="60" height="12" rx="6" fill="#38bdf8"/>
+
+    <!-- Bottom Keypad / Chip -->
+    <rect x="124" y="318" width="264" height="84" rx="18" fill="#1e293b"/>
+    <!-- Checkmark Badge -->
+    <circle cx="340" cy="360" r="24" fill="#10b981"/>
+    <path d="M330 360 L337 367 L352 352" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- Brand Bars -->
+    <rect x="150" y="344" width="120" height="12" rx="6" fill="#64748b"/>
+    <rect x="150" y="366" width="80" height="10" rx="5" fill="#475569"/>
+  </g>
+</svg>

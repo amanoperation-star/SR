@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MatchHub Enterprise Desktop v5.0 | مطابقة الماكينات وتفصيل حسابات المناديب</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Tajawal', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: 'Cairo', -apple-system, BlinkMacSystemFont, sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #64748b; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .custom-dropzone.dragover { border-color: #6366f1 !important; background-color: rgba(99, 102, 241, 0.08) !important; }
+        .cartoon-border { border: 3px solid #0f172a; box-shadow: 4px 4px 0px #0f172a; }
+        .cartoon-btn { border: 3px solid #0f172a; box-shadow: 4px 4px 0px #0f172a; transition: all 0.15s ease; }
+        .cartoon-btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #0f172a; }
+        .cartoon-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #0f172a; }
+        @keyframes cardFadeInUp { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes stateSuccessPop { 0% { transform: scale(0.96); } 50% { transform: scale(1.025); } 100% { transform: scale(1); } }
+        @keyframes badgePop { 0% { transform: scale(0.75); opacity: 0.4; } 60% { transform: scale(1.12); } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes emeraldGlowPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } 50% { box-shadow: 0 0 16px 2px rgba(16, 185, 129, 0.35); } }
+        @keyframes readyBtnGlow { 0%, 100% { box-shadow: 0 0 15px rgba(59, 130, 246, 0.35); transform: translateY(0); } 50% { box-shadow: 0 0 25px rgba(59, 130, 246, 0.65); transform: translateY(-1px); } }
+        .animate-card-in { animation: cardFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .animate-card-in-delayed { animation: cardFadeInUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both; }
+        .animate-state-pop { animation: stateSuccessPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .animate-badge-pop { animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .animate-emerald-glow { animation: emeraldGlowPulse 2.5s infinite ease-in-out; }
+        .animate-ready-btn { animation: readyBtnGlow 2s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#080c14] text-slate-800 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-300 antialiased selection:bg-indigo-500 selection:text-white relative overflow-x-hidden">
+
+<!-- Ambient Background Glow Gradients -->
+<div class="fixed top-0 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+<div class="fixed bottom-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none -z-10"></div>
+
+<!-- Desktop Title Bar Simulation -->
+<div class="bg-slate-100 dark:bg-slate-950/90 border-b border-slate-200 dark:border-slate-800 px-4 py-1.5 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 select-none">
+    <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 ml-2">
+            <span class="w-3 h-3 rounded-full bg-rose-500 hover:bg-rose-600 transition-colors inline-block cursor-pointer" onclick="window.close()" title="إغلاق"></span>
+            <span class="w-3 h-3 rounded-full bg-amber-500 hover:bg-amber-600 transition-colors inline-block cursor-pointer" onclick="toggleFullscreen()" title="تكبير / تصغير"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-500 hover:bg-emerald-600 transition-colors inline-block cursor-pointer" onclick="toggleFullscreen()" title="ملء الشاشة"></span>
+        </div>
+        <span class="font-mono font-bold text-slate-700 dark:text-slate-300">MatchHub Enterprise Desktop</span>
+        <span class="text-[10px] text-slate-400 hidden sm:inline">• Standalone Single-File HTML Edition</span>
+    </div>
+    <div class="flex items-center gap-3">
+        <span class="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold" id="offlineStatus">
+            <i class="fa-solid fa-wifi text-[10px]"></i>
+            <span class="hidden md:inline">أوفلاين 100% (معالجة محلية)</span>
+        </span>
+        <button class="hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer" onclick="toggleFullscreen()" title="F11 ملء الشاشة">
+            <i class="fa-solid fa-expand"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Header Navigation Bar -->
+<header class="relative w-full border-b border-slate-800/80 bg-[#070b14] select-none font-['Cairo']">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
+        <!-- Right Side: Identity & Status -->
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-blue-600 shadow-[0_0_25px_rgba(37,99,235,0.7)] text-white flex items-center justify-center shrink-0 border border-blue-400/40">
+                <i class="fa-solid fa-layer-group text-lg text-white"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-full border border-blue-500/40 bg-blue-950/60 text-blue-400">v5.0 Desktop</span>
+                    <h1 class="font-bold text-white text-base tracking-normal">MatchHub Enterprise</h1>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">مطابقة ماكينات الدفع وتفصيل حسابات المناديب في أسطر منفصلة أوفلاين</p>
+            </div>
+
+            <!-- Thin Divider -->
+            <div class="h-6 w-px bg-slate-800 mx-1 hidden sm:block"></div>
+
+            <!-- Online Connected Badge -->
+            <div class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/40 text-emerald-400 text-xs font-bold shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
+                <span>متصل</span>
+            </div>
+        </div>
+
+        <!-- Left Side: Unified Toolbar Pill + Sample Demo + Settings -->
+        <div class="flex items-center gap-2.5 flex-wrap justify-end">
+            <!-- The Unified Pill Toolbar -->
+            <div class="flex items-center gap-1 p-1 rounded-2xl bg-[#0d1322] border border-slate-800 shadow-inner">
+                <!-- 1. برنامج الديسك توب Button (Electric Blue) -->
+                <button class="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all cursor-pointer shrink-0" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="مركز برنامج الديسك توب">
+                    <i class="fa-solid fa-desktop text-white"></i>
+                    <span>برنامج الديسك توب</span>
+                </button>
+
+                <!-- 2. استعلام مندوب -->
+                <button class="px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer shrink-0" onclick="openRepLookupModal()" title="استعلام ماكينات مندوب برقم الحساب">
+                    <i class="fa-solid fa-user text-slate-400"></i>
+                    <span>استعلام مندوب</span>
+                </button>
+
+                <!-- 3. تحميل HTML (Green) -->
+                <button class="px-2.5 py-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0" onclick="downloadCurrentHTML()" title="تحميل ملف HTML">
+                    <i class="fa-solid fa-download text-emerald-400"></i>
+                    <span>تحميل HTML</span>
+                </button>
+
+                <!-- 4. محرر القوالب -->
+                <button class="px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer shrink-0" onclick="openManualEditor(1)" title="محرر الجداول التفاعلي">
+                    <i class="fa-solid fa-table-cells-large text-slate-400"></i>
+                    <span>محرر القوالب</span>
+                </button>
+
+                <!-- 5. مسح الكل (Trash Icon) -->
+                <button class="p-1.5 text-rose-500 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer shrink-0" onclick="openResetModal()" title="مسح كافة البيانات وإعادة الضبط">
+                    <i class="fa-solid fa-trash-can text-rose-500"></i>
+                </button>
+            </div>
+
+            <!-- Separate Capsule Button: عينة فورية (Amber Border & Text) -->
+            <button class="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-[#16120b] border border-amber-500/50 hover:border-amber-400 text-amber-400 flex items-center gap-2 transition-all cursor-pointer shadow-sm shrink-0" onclick="loadSampleData()" title="تحميل عينة تجريبية فورية">
+                <i class="fa-solid fa-flask text-amber-400"></i>
+                <span>عينة فورية</span>
+            </button>
+
+            <!-- Theme / Display Switcher Button -->
+            <button class="p-2 rounded-xl bg-[#16120b] border border-amber-500/50 hover:border-amber-400 text-amber-400 flex items-center justify-center transition-all cursor-pointer shadow-sm shrink-0 hover:bg-amber-950/40 hover:scale-105 active:scale-95" onclick="toggleDarkMode()" title="تبديل المظهر (نهاري / ليلي)" id="themeToggleBtn">
+                <i class="fa-solid fa-sun text-amber-400" id="themeToggleIcon"></i>
+            </button>
+        </div>
+    </div>
+</header>
+
+<!-- Main Container -->
+<main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-6 relative z-10 font-['Cairo']">
+
+    <!-- Exact Hero Banner from image.png -->
+    <div class="bg-[#0a0f1d] border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col xl:flex-row items-center justify-between gap-4 w-full shadow-lg">
+        <!-- Right Side: File Icon + Title + Certified Badge + Description -->
+        <div class="flex items-center gap-4 w-full xl:w-auto">
+            <div class="w-12 h-12 rounded-xl bg-blue-950/60 border border-blue-500/30 text-blue-400 flex items-center justify-center text-xl shrink-0 shadow-sm">
+                <i class="fa-solid fa-file-circle-check text-2xl text-blue-400"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <h2 class="text-lg sm:text-xl font-black text-white tracking-normal">مركز تحميل القوالب الجاهزة والمحرر أوفلاين</h2>
+                    <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-[#062419] border border-emerald-500/40 text-emerald-400">
+                        <i class="fa-solid fa-circle-check text-emerald-400 text-xs"></i>
+                        <span>رؤوس أعمدة مطابقة 100%</span>
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">قم بتحميل النماذج الفارغة برؤوس الأعمدة الرسمية، أو استخدم المحرر التفاعلي لإدخال وتعديل البيانات مباشرة.</p>
+            </div>
+        </div>
+
+        <!-- Left Side: Buttons in exact order of image.png -->
+        <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto justify-start xl:justify-end shrink-0">
+            <!-- 1. محرر القوالب أونلاين Button (Solid Bright Orange/Amber) -->
+            <button class="px-5 py-2.5 text-xs font-black bg-[#f59e0b] hover:bg-[#d97706] text-black rounded-xl flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] transition-all cursor-pointer shrink-0" onclick="openManualEditor(1)">
+                <i class="fa-solid fa-table-cells text-black"></i>
+                <span>محرر القوالب أونلاين</span>
+            </button>
+
+            <!-- 2. قالب الماكينات (.xlsx) + CSV -->
+            <div class="inline-flex items-center bg-[#0d1527] border border-slate-700/80 rounded-xl p-1 text-xs font-bold text-white shrink-0">
+                <button class="px-3 py-1.5 flex items-center gap-2 hover:text-emerald-300 transition-colors cursor-pointer" onclick="downloadTemplate(1, 'xlsx')" title="تنزيل قالب شيت الماكينات إكسل">
+                    <i class="fa-solid fa-file-excel text-xs text-emerald-400"></i>
+                    <span>قالب الماكينات (.xlsx)</span>
+                </button>
+                <div class="h-4 w-px bg-slate-700 mx-1"></div>
+                <button class="px-2 py-1 text-[11px] font-black text-blue-400 hover:text-blue-300 transition-colors cursor-pointer" onclick="downloadTemplate(1, 'csv')" title="تنزيل بصيغة CSV">CSV</button>
+            </div>
+
+            <!-- 3. قالب المناديب (.xlsx) + CSV -->
+            <div class="inline-flex items-center bg-[#0d1527] border border-slate-700/80 rounded-xl p-1 text-xs font-bold text-white shrink-0">
+                <button class="px-3 py-1.5 flex items-center gap-2 hover:text-emerald-300 transition-colors cursor-pointer" onclick="downloadTemplate(2, 'xlsx')" title="تنزيل قالب شيت المناديب إكسل">
+                    <i class="fa-solid fa-file-excel text-xs text-emerald-400"></i>
+                    <span>قالب المناديب (.xlsx)</span>
+                </button>
+                <div class="h-4 w-px bg-slate-700 mx-1"></div>
+                <button class="px-2 py-1 text-[11px] font-black text-blue-400 hover:text-blue-300 transition-colors cursor-pointer" onclick="downloadTemplate(2, 'csv')" title="تنزيل بصيغة CSV">CSV</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info & Upload Cards -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-8 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 text-white rounded-3xl p-6 shadow-xl border border-slate-800 flex flex-col justify-between">
+            <div>
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        <i class="fa-solid fa-bolt text-amber-300 ml-1"></i> مطابقة تفصيلية سريعة O(1)
+                    </span>
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        <i class="fa-solid fa-list-ol text-xs ml-1"></i> سطر مستقل لكل مندوب وحسابه
+                    </span>
+                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <i class="fa-solid fa-laptop text-xs ml-1"></i> ملف HTML مستقل بدون إنترنت
+                    </span>
+                </div>
+                <h2 class="text-xl sm:text-2xl font-black mb-2">مطابقة ماكينات شيت المكن بحسابات ومناديب شيت الربط</h2>
+                <p class="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                    يقوم البرنامج بمطابقة كل ماكينة، وإذا كانت مربوطة بأكثر من مندوب؛ تُعرض <strong class="text-amber-300">تحت بعضها في أسطر متتالية</strong>: رقم الماكينة وبجانبها المندوب الأول ورقمه، والسطر التالي تحته مباشرة نفس رقم الماكينة والمندوب الثاني ورقمه.
+                </p>
+            </div>
+            <div class="grid grid-cols-3 gap-2 pt-4 mt-4 border-t border-slate-800/80 text-xs">
+                <div class="flex items-center gap-2"><span class="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">1</span><span>مندوب واحد (سطر فردي)</span></div>
+                <div class="flex items-center gap-2"><span class="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">2+</span><span>متعددة المناديب (أسطر متتالية)</span></div>
+                <div class="flex items-center gap-2"><span class="w-5 h-5 rounded-md bg-rose-500/20 text-rose-400 flex items-center justify-center font-bold">0</span><span>بدون مندوب (شاغرة)</span></div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-7 flex justify-center w-full">
+            <div class="w-full max-w-xl bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+              
+              <!-- Top Bar -->
+              <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <div class="flex items-center gap-3">
+                  <div class="w-3 h-3 rounded-full bg-amber-400 animate-pulse" id="statusPulseDot"></div>
+                  <div>
+                    <h2 class="text-base font-bold text-slate-100">حالة الملفات المحملة</h2>
+                    <p class="text-xs text-slate-400" id="uploadStatusText">بانتظار رفع الملفات لبدء العملية</p>
+                  </div>
+                </div>
+                <span class="text-xs px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700" id="uploadCountBadge">2 ملفات متبقية</span>
+              </div>
+
+              <!-- Upload Grid -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <!-- Card 1 -->
+                <div class="border border-dashed border-slate-700 hover:border-blue-500/50 bg-slate-800/30 rounded-xl p-4 flex flex-col justify-between gap-4 transition-all group" id="card-box-1">
+                  <div class="flex items-start justify-between">
+                    <div class="p-2.5 rounded-lg bg-blue-500/10 text-blue-400 group-hover:scale-105 transition-transform">
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" stroke-width="2"/><line x1="8" y1="6" x2="16" y2="6" stroke-width="2"/><line x1="8" y1="10" x2="10" y2="10" stroke-width="2"/><line x1="14" y1="10" x2="16" y2="10" stroke-width="2"/><line x1="8" y1="14" x2="10" y2="14" stroke-width="2"/><line x1="14" y1="14" x2="16" y2="14" stroke-width="2"/><line x1="8" y1="18" x2="16" y2="18" stroke-width="2"/></svg>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <button onclick="clearSheet(1)" class="text-[11px] font-medium text-rose-400 hover:text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 cursor-pointer hidden" id="clear-btn-1" title="إفراغ الملف">
+                        🗑️ إفراغ
+                      </button>
+                      <span class="text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20" id="badge-1">غير مرفوع</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-200">1. شيت الماكينات</h3>
+                    <p class="text-xs text-slate-400 mt-1 truncate" id="file-name-desc-1">اضغط هنا لرفع الملف (Excel/CSV)</p>
+                  </div>
+
+                  <label class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-colors text-center cursor-pointer block">
+                    <span id="btn-text-1">رفع الملف</span>
+                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event, 1)">
+                  </label>
+                </div>
+
+                <!-- Card 2 -->
+                <div class="border border-dashed border-slate-700 hover:border-indigo-500/50 bg-slate-800/30 rounded-xl p-4 flex flex-col justify-between gap-4 transition-all group" id="card-box-2">
+                  <div class="flex items-start justify-between">
+                    <div class="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 group-hover:scale-105 transition-transform">
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5 5 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <button onclick="clearSheet(2)" class="text-[11px] font-medium text-rose-400 hover:text-rose-300 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 cursor-pointer hidden" id="clear-btn-2" title="إفراغ الملف">
+                        🗑️ إفراغ
+                      </button>
+                      <span class="text-[11px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20" id="badge-2">غير مرفوع</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-200">2. شيت المناديب والحسابات</h3>
+                    <p class="text-xs text-slate-400 mt-1 truncate" id="file-name-desc-2">اضغط هنا لرفع الملف (Excel/CSV)</p>
+                  </div>
+
+                  <label class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition-colors text-center cursor-pointer block">
+                    <span id="btn-text-2">رفع الملف</span>
+                    <input type="file" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleFileSelect(event, 2)">
+                  </label>
+                </div>
+
+              </div>
+
+              <!-- Bottom Action -->
+              <div class="pt-2 flex items-center justify-between border-t border-slate-800">
+                <div class="flex items-center gap-3">
+                  <button onclick="resetAllState()" class="text-xs text-slate-400 hover:text-rose-400 transition-colors cursor-pointer">إلغاء</button>
+                  <button onclick="loadSampleData()" class="text-xs text-slate-500 hover:text-blue-400 transition-colors cursor-pointer">عينة بيانات تجريبية ✨</button>
+                </div>
+                <button onclick="runMatchingAlgorithm()" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  <span>بدء المطابقة (<span id="matchBtnCount">0</span>)</span>
+                </button>
+              </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-2xl shadow-sm flex items-center gap-2 overflow-x-auto">
+        <button class="flex-1 py-2 px-3 rounded-xl font-bold text-xs bg-indigo-600 text-white whitespace-nowrap cursor-pointer" id="tab-b-1" onclick="switchTab(1)">1. شيت الماكينات المستهدفة</button>
+        <button class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer" id="tab-b-2" onclick="switchTab(2)">2. شيت ربط المناديب والحسابات</button>
+        <button class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer" id="tab-b-3" onclick="switchTab(3)">3. تعيين أعمدة الربط والحسابات</button>
+        <button class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer" id="tab-b-4" onclick="switchTab(4)">4. تقرير أسطر الماكينات والمناديب (<span id="tabCountBadge">0</span> سطر)</button>
+        <button class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-amber-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer flex items-center justify-center gap-1.5" id="tab-b-5" onclick="switchTab(5)">
+            <i class="fa-solid fa-triangle-exclamation text-amber-500"></i>
+            <span>5. فحص النزاعات والحالات الشاذة (<span id="auditAlertTotalBadge">0</span>)</span>
+        </button>
+    </div>
+
+    <!-- TAB 1 -->
+    <div class="space-y-4" id="tab-c-1">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up text-indigo-500"></i>
+                    <span>رفع الشيت الأول (شيت أرقام الماكينات المستهدفة)</span>
+                  </h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">الملف الذي يحتوي على أرقام الماكينات (Machine ID / Serial) المطلوب فحصها ومعرفة مناديبها وحساباتهم.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer" onclick="openManualEditor(1)">
+                    <i class="fa-solid fa-table-list"></i>
+                    <span>تعبئة القالب يدوياً</span>
+                  </button>
+                  <button class="px-3 py-1.5 text-xs font-bold rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors cursor-pointer" onclick="downloadTemplate(1, 'xlsx')">
+                    <i class="fa-solid fa-download"></i>
+                    <span>تحميل نموذج القالب</span>
+                  </button>
+                </div>
+            </div>
+            <div class="custom-dropzone relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/30">
+                <input type="file" id="input-file1" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                <i class="fa-solid fa-file-excel text-4xl text-indigo-500 mb-2 block"></i>
+                <p class="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">اضغط هنا لاختيار شيت الماكينات أو اسحبه وأفلته هنا</p>
+                <p class="text-[11px] text-slate-400">يدعم ملفات Excel (.xlsx, .xls) أو CSV</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2 -->
+    <div class="space-y-4 hidden" id="tab-c-2">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-blue-500"></i>
+                    <span>رفع الشيت الثاني (شيت المناديب وأرقام حساباتهم وربط الماكينات)</span>
+                  </h3>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">الملف الذي يحتوي على رقم الماكينة، اسم المندوب، ورقم حساب المندوب (Account No / Code).</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer" onclick="openManualEditor(2)">
+                    <i class="fa-solid fa-table-list"></i>
+                    <span>تعبئة القالب يدوياً</span>
+                  </button>
+                  <button class="px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5 transition-colors cursor-pointer" onclick="downloadTemplate(2, 'xlsx')">
+                    <i class="fa-solid fa-download"></i>
+                    <span>تحميل نموذج القالب</span>
+                  </button>
+                </div>
+            </div>
+            <div class="custom-dropzone relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-blue-500 bg-slate-50 dark:bg-slate-800/30">
+                <input type="file" id="input-file2" accept=".xlsx, .xls, .csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+                <i class="fa-solid fa-file-invoice-dollar text-4xl text-blue-500 mb-2 block"></i>
+                <p class="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">اضغط هنا لاختيار شيت المناديب والحسابات أو اسحبه وأفلته هنا</p>
+                <p class="text-[11px] text-slate-400">يدعم ملفات Excel (.xlsx, .xls) أو CSV</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 3 -->
+    <div class="space-y-4 hidden" id="tab-c-3">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8">
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white mb-3">تحديد وتعيين أعمدة الربط والحسابات</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <label class="block text-xs font-bold text-indigo-600 dark:text-indigo-400">1. عمود الماكينة (شيت المكن):</label>
+                    <select id="map-m1" class="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none"></select>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <label class="block text-xs font-bold text-blue-600 dark:text-blue-400">2. عمود الماكينة (شيت المناديب):</label>
+                    <select id="map-m2" class="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none"></select>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <label class="block text-xs font-bold text-amber-600 dark:text-amber-400">3. عمود رقم حساب المندوب:</label>
+                    <select id="map-acc" class="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none"></select>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                    <label class="block text-xs font-bold text-emerald-600 dark:text-emerald-400">4. عمود اسم المندوب:</label>
+                    <select id="map-rep" class="w-full p-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold focus:outline-none"></select>
+                </div>
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                <button class="text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1.5 cursor-pointer" onclick="switchTab(2)">
+                    <i class="fa-solid fa-arrow-right"></i>
+                    <span>الرجوع لشيت المناديب</span>
+                </button>
+                <button class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs py-2.5 px-6 rounded-xl shadow-md flex items-center gap-2 transition-all cursor-pointer" onclick="runMatchingAlgorithm()">
+                    <i class="fa-solid fa-check-double"></i>
+                    <span>تأكيد الإعدادات وتشغيل المطابقة</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: Detailed Results -->
+    <div class="space-y-5 hidden" id="tab-c-4">
+        <!-- KPIs -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3.5 rounded-2xl">
+                <span class="text-[11px] text-slate-500 block mb-1">الماكينات الفريدة</span>
+                <span class="text-xl font-black text-slate-900 dark:text-white" id="stat-total">0</span>
+                <span class="text-[10px] text-slate-400 block mt-1">ينتج عنها <strong class="text-indigo-600 dark:text-indigo-400" id="stat-total-rows">0</strong> سطر</span>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-800/60 p-3.5 rounded-2xl">
+                <span class="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold block mb-1">مندوب واحد</span>
+                <span class="text-xl font-black text-emerald-600 dark:text-emerald-400" id="stat-single">0</span>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 p-3.5 rounded-2xl">
+                <span class="text-[11px] text-amber-600 dark:text-amber-400 font-bold block mb-1">متعددة المناديب</span>
+                <span class="text-xl font-black text-amber-600 dark:text-amber-400" id="stat-multi">0</span>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800/60 p-3.5 rounded-2xl">
+                <span class="text-[11px] text-rose-600 dark:text-rose-400 font-bold block mb-1">بدون مندوب</span>
+                <span class="text-xl font-black text-rose-600 dark:text-rose-400" id="stat-none">0</span>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-amber-500/40 p-3.5 rounded-2xl cursor-pointer" onclick="switchTab(5)">
+                <span class="text-[11px] text-amber-600 font-bold block mb-1">تكرار الشيت 1</span>
+                <span class="text-xl font-black text-amber-500" id="stat-duplicates">0</span>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-rose-500/40 p-3.5 rounded-2xl cursor-pointer" onclick="switchTab(5)">
+                <span class="text-[11px] text-rose-600 font-bold block mb-1">حسابات شاذة</span>
+                <span class="text-xl font-black text-rose-500" id="stat-irregular">0</span>
+            </div>
+        </div>
+
+        <!-- Table Card -->
+        <div class="bg-[#0a0f1d] border border-slate-800 rounded-3xl p-5 space-y-4 shadow-sm font-['Cairo']">
+            <!-- Notification Alert Banner -->
+            <div class="p-3.5 bg-blue-500/10 border border-blue-500/30 rounded-2xl text-xs flex items-center justify-between flex-wrap gap-2.5 shadow-sm">
+                <div class="flex items-center gap-2.5 text-slate-200">
+                    <div class="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                        <i class="fa-solid fa-circle-info text-xs"></i>
+                    </div>
+                    <span class="text-xs text-slate-300 leading-relaxed">
+                        يتم تفصيل كل ماكينة متعددة المناديب في أسطر متتالية تحت بعضها (رقم الماكينة ثم رقم حساب المندوب الأول، وتحته مباشرة نفس رقم الماكينة ورقم حساب المندوب الثاني وهكذا).
+                    </span>
+                </div>
+                <span class="text-[11px] font-bold px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1.5 shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-400 text-[10px]"></i>
+                    <span>جاهز للعرض والتصدير كسطور منفصلة</span>
+                </span>
+            </div>
+
+            <!-- Toolbar & Filter Controls (Glassmorphism Bar) -->
+            <div class="p-3.5 rounded-2xl bg-[#0c1220]/80 backdrop-blur-xl border border-slate-800 flex flex-col lg:flex-row justify-between items-center gap-3.5 shadow-lg">
+                <!-- Right Side: Search Input & Segmented View Controls -->
+                <div class="flex items-center gap-3 w-full lg:w-auto flex-wrap">
+                    <!-- Search Input -->
+                    <div class="relative flex-1 sm:w-80">
+                        <i class="fa-solid fa-magnifying-glass absolute right-3.5 top-3 text-slate-400 text-xs pointer-events-none"></i>
+                        <input type="text" id="tableSearch" autocomplete="off" autocorrect="off" spellcheck="false" oninput="filterTable()" class="w-full pr-10 pl-9 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500 shadow-inner" placeholder="ابحث برقم حساب المندوب أو الماكينة..." />
+                        <button type="button" id="clearTableSearchBtn" onclick="clearTableSearch()" class="hidden absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white items-center justify-center text-xs transition cursor-pointer" title="مسح البحث">
+                            <i class="fa-solid fa-xmark text-xs"></i>
+                        </button>
+                    </div>
+
+                    <!-- Segmented Control for Table vs Cards -->
+                    <div class="inline-flex rounded-xl p-1 bg-slate-900 border border-slate-800 text-xs font-bold shrink-0">
+                        <button id="viewBtnTable" onclick="setViewMode('table')" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer">
+                            <i class="fa-solid fa-table-cells text-xs"></i>
+                            <span>عرض الجدول (Table)</span>
+                        </button>
+                        <button id="viewBtnCards" onclick="setViewMode('cards')" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer">
+                            <i class="fa-solid fa-grip text-xs"></i>
+                            <span>عرض البطاقات (Cards)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Left Side: Filter Buttons Capsule + Excel Export Button -->
+                <div class="flex items-center gap-3 w-full lg:w-auto justify-end flex-wrap">
+                    <!-- Filter Buttons Capsule -->
+                    <div class="inline-flex rounded-xl p-1 bg-slate-900 border border-slate-800 text-xs font-bold shrink-0 flex-wrap">
+                        <button onclick="openRepLookupModal()" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white shadow-sm flex items-center gap-1.5 cursor-pointer">
+                            <i class="fa-solid fa-user-check text-xs"></i>
+                            <span>استعلام ماكينات مندوب</span>
+                        </button>
+                        <button onclick="setFilterStatus('all')" id="btnFilterAll" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer">الكل (11)</button>
+                        <button onclick="setFilterStatus('single')" id="btnFilterSingle" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer">مندوب واحد</button>
+                        <button onclick="setFilterStatus('multi')" id="btnFilterMulti" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer">متعددة المناديب</button>
+                        <button onclick="setFilterStatus('none')" id="btnFilterNone" class="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer">شاغرة</button>
+                    </div>
+
+                    <!-- Excel Export Button -->
+                    <button onclick="exportResultsExcel()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-colors cursor-pointer shrink-0">
+                        <i class="fa-solid fa-file-excel text-emerald-200"></i>
+                        <span>تصدير Excel (أسطر منفصلة)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <div id="tableViewContainer" class="overflow-x-auto border border-slate-800/90 rounded-2xl bg-slate-900/80 backdrop-blur-md shadow-2xl">
+                <table class="w-full text-right border-collapse text-xs">
+                    <thead class="bg-slate-900/95 text-slate-400 font-bold border-b border-slate-800">
+                        <tr>
+                            <th class="p-3.5 w-12 text-center">
+                                <input type="checkbox" id="selectAllCheckbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-0 cursor-pointer" />
+                            </th>
+                            <th class="p-3.5 w-14 text-center font-mono">م</th>
+                            <th class="p-3.5 w-48">رقم الماكينة</th>
+                            <th class="p-3.5 w-40">رقم حساب المندوب</th>
+                            <th class="p-3.5">اسم المندوب المسند</th>
+                            <th class="p-3.5 w-48 text-center">ترتيب المندوب للماكينة</th>
+                            <th class="p-3.5 w-40 text-center">حالة الماكينة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody" class="divide-y divide-slate-800/80 text-slate-300">
+                        <!-- Row 1: POS-100 Primary -->
+                        <tr class="hover:bg-slate-800/50 transition-colors">
+                            <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                            <td class="p-3.5 text-center text-slate-500 font-mono font-bold">1</td>
+                            <td class="p-3.5 font-mono font-black text-white text-sm tracking-wide">POS-100</td>
+                            <td class="p-3.5">
+                                <span class="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30">1234</span>
+                            </td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 text-blue-400 flex items-center justify-center text-xs shadow-inner">
+                                        <i class="fa-solid fa-user"></i>
+                                    </div>
+                                    <span class="font-bold text-white text-xs">أحمد محمود سالم</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                    المندوب الأول (1 من 2)
+                                </span>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                    <span>متعددة (2 مناديب)</span>
+                                </span>
+                            </td>
+                        </tr>
+
+                        <!-- Row 2: POS-100 Secondary (Child / Nested Row) -->
+                        <tr class="bg-slate-950/60 hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                            <td class="p-3.5 text-center text-slate-500 font-mono font-bold">2</td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2 font-mono font-bold text-slate-300 pr-3 border-r-2 border-indigo-500/50">
+                                    <i class="fa-solid fa-arrow-turn-down text-indigo-400 text-xs"></i>
+                                    <span class="tracking-wide">POS-100</span>
+                                    <span class="text-[10px] text-slate-400 font-sans font-normal px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/50">(تابع)</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5">
+                                <span class="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30">456</span>
+                            </td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 text-blue-400 flex items-center justify-center text-xs shadow-inner">
+                                        <i class="fa-solid fa-user"></i>
+                                    </div>
+                                    <span class="font-bold text-white text-xs">محمود حسن رضوان</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700/60">
+                                    مندوب إضافي (2 من 2)
+                                </span>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                    <span>متعددة (2 مناديب)</span>
+                                </span>
+                            </td>
+                        </tr>
+
+                        <!-- Row 3: POS-300 Primary (3 Reps) -->
+                        <tr class="hover:bg-slate-800/50 transition-colors">
+                            <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                            <td class="p-3.5 text-center text-slate-500 font-mono font-bold">3</td>
+                            <td class="p-3.5 font-mono font-black text-white text-sm tracking-wide">POS-300</td>
+                            <td class="p-3.5">
+                                <span class="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30">789</span>
+                            </td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 text-blue-400 flex items-center justify-center text-xs shadow-inner">
+                                        <i class="fa-solid fa-user"></i>
+                                    </div>
+                                    <span class="font-bold text-white text-xs">خالد عبد الرحمن</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                    المندوب الأول (1 من 3)
+                                </span>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                    <span>متعددة (3 مناديب)</span>
+                                </span>
+                            </td>
+                        </tr>
+
+                        <!-- Row 4: POS-300 Secondary 1 (Child / Nested Row) -->
+                        <tr class="bg-slate-950/60 hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                            <td class="p-3.5 text-center text-slate-500 font-mono font-bold">4</td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2 font-mono font-bold text-slate-300 pr-3 border-r-2 border-indigo-500/50">
+                                    <i class="fa-solid fa-arrow-turn-down text-indigo-400 text-xs"></i>
+                                    <span class="tracking-wide">POS-300</span>
+                                    <span class="text-[10px] text-slate-400 font-sans font-normal px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/50">(تابع)</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5">
+                                <span class="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30">890</span>
+                            </td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 text-blue-400 flex items-center justify-center text-xs shadow-inner">
+                                        <i class="fa-solid fa-user"></i>
+                                    </div>
+                                    <span class="font-bold text-white text-xs">طارق زياد العتيبي</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700/60">
+                                    مندوب إضافي (2 من 3)
+                                </span>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                    <span>متعددة (3 مناديب)</span>
+                                </span>
+                            </td>
+                        </tr>
+
+                        <!-- Row 5: POS-300 Secondary 2 (Child / Nested Row) -->
+                        <tr class="bg-slate-950/60 hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                            <td class="p-3.5 text-center text-slate-500 font-mono font-bold">5</td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2 font-mono font-bold text-slate-300 pr-3 border-r-2 border-indigo-500/50">
+                                    <i class="fa-solid fa-arrow-turn-down text-indigo-400 text-xs"></i>
+                                    <span class="tracking-wide">POS-300</span>
+                                    <span class="text-[10px] text-slate-400 font-sans font-normal px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/50">(تابع)</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5">
+                                <span class="font-mono text-xs font-bold px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30">999</span>
+                            </td>
+                            <td class="p-3.5">
+                                <div class="flex items-center gap-2.5">
+                                    <div class="w-7 h-7 rounded-full bg-slate-800 border border-slate-700/60 text-blue-400 flex items-center justify-center text-xs shadow-inner">
+                                        <i class="fa-solid fa-user"></i>
+                                    </div>
+                                    <span class="font-bold text-white text-xs">عمر فاروق الشامي</span>
+                                </div>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700/60">
+                                    مندوب إضافي (3 من 3)
+                                </span>
+                            </td>
+                            <td class="p-3.5 text-center">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                    <i class="fa-solid fa-circle-exclamation text-[10px]"></i>
+                                    <span>متعددة (3 مناديب)</span>
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Cards View (Hidden by default, shown when Cards view toggled) -->
+            <div id="cardsViewContainer" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Card 1 -->
+                <div class="p-4 rounded-3xl border border-amber-500/30 bg-[#0c1222] space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span class="font-mono font-black text-white text-sm">POS-100</span>
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">المندوب الأول (1 من 2)</span>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-slate-400">حساب المندوب:</span>
+                            <span class="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded">1234</span>
+                        </div>
+                        <p class="font-bold text-white text-xs">أحمد محمود سالم</p>
+                    </div>
+                </div>
+                <!-- Card 2 -->
+                <div class="p-4 rounded-3xl border border-amber-500/30 bg-[#0c1222] space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span class="font-mono font-black text-white text-sm">POS-100 (تابع)</span>
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">مندوب إضافي (2 من 2)</span>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-slate-400">حساب المندوب:</span>
+                            <span class="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded">5678</span>
+                        </div>
+                        <p class="font-bold text-white text-xs">محمد إبراهيم علي</p>
+                    </div>
+                </div>
+                <!-- Card 3 -->
+                <div class="p-4 rounded-3xl border border-emerald-500/30 bg-[#0c1222] space-y-3">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <span class="font-mono font-black text-white text-sm">POS-300</span>
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">مندوب رئيسي (1 من 1)</span>
+                    </div>
+                    <div class="p-3 rounded-2xl bg-slate-900 border border-slate-800 space-y-1.5">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-slate-400">حساب المندوب:</span>
+                            <span class="font-mono font-bold text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded">9876</span>
+                        </div>
+                        <p class="font-bold text-white text-xs">خالد عبد الرحمن</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 5: Audit -->
+    <div class="space-y-5 hidden" id="tab-c-5">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 p-5 rounded-3xl space-y-3">
+                <h4 class="font-bold text-amber-600 text-sm">تكرار الماكينات داخل الشيت الأول</h4>
+                <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 max-h-48 overflow-y-auto" id="auditDuplicatesList"></div>
+            </div>
+            <div class="bg-white dark:bg-slate-900 border border-rose-300 dark:border-rose-800/80 p-5 rounded-3xl space-y-3">
+                <h4 class="font-bold text-rose-600 text-sm">أرقام حسابات شاذة أو غير منتظمة</h4>
+                <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 max-h-48 overflow-y-auto" id="auditIrregList"></div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- MODAL 0: Progress / Loading Card Modal matching image.png -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-[#030712]/85 backdrop-blur-md hidden transition-all p-4" id="progressLoadingModal">
+    <div class="bg-[#0c1326] border border-slate-800/90 rounded-3xl p-6 sm:p-7 max-w-xl w-full mx-auto shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] relative overflow-hidden text-right select-none animate-in fade-in zoom-in-95 duration-200">
+        <!-- Glow -->
+        <div class="absolute top-0 right-1/4 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute bottom-0 left-1/4 w-48 h-48 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <!-- 1. TOP HEADER SECTION -->
+        <div class="flex items-start justify-between gap-4 mb-4">
+            <!-- Top Left in RTL: Percentage Capsule Badge -->
+            <div class="order-2 sm:order-1 shrink-0">
+                <span class="px-3.5 py-1 rounded-full text-xs font-mono font-black bg-[#0d1c3a] text-blue-400 border border-blue-500/40 shadow-inner inline-block" id="progressPercentBadge">
+                    60%
+                </span>
+            </div>
+
+            <!-- Top Right in RTL: Spinning Gear Icon + Title + File Name + Subtitle -->
+            <div class="flex items-start gap-3.5 order-1 sm:order-2 flex-1">
+                <div class="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0 shadow-sm">
+                    <i class="fa-solid fa-gear fa-spin text-xl text-blue-400"></i>
+                </div>
+
+                <div class="space-y-0.5">
+                    <h3 class="text-base sm:text-lg font-black text-white leading-tight" id="progressTitle">
+                        قراءة
+                    </h3>
+                    <p class="text-sm font-bold text-slate-100 font-mono tracking-wide break-all" id="progressFileName" dir="ltr">
+                        نموذج_شيت_ربط_المناديب_والحسابات.csv
+                    </p>
+                    <p class="text-xs text-slate-400 font-medium pt-0.5" id="progressSubtitle">
+                        جاري تحليل خلايا وسجلات ملف الإكسل...
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. PROGRESS BAR TRACK -->
+        <div class="my-4">
+            <div class="w-full h-3 bg-[#080d1a] rounded-full overflow-hidden p-0.5 border border-slate-700/60 shadow-inner">
+                <div id="progressBarFill" class="h-full bg-gradient-to-r from-indigo-500 via-blue-400 to-amber-400 rounded-full transition-all duration-200 ease-out shadow-[0_0_12px_rgba(59,130,246,0.6)]" style="width: 60%"></div>
+            </div>
+        </div>
+
+        <!-- 3. BOTTOM FOOTER SECTION -->
+        <div class="flex items-center justify-between text-xs pt-1">
+            <span class="font-mono font-bold text-indigo-400 order-2 sm:order-1 text-xs" id="progressBottomPercent">
+                60%
+            </span>
+            <span class="text-slate-400 font-medium order-1 sm:order-2 text-xs truncate max-w-[80%]" id="progressStepText">
+                تحويل ورقة العمل إلى هيكل بيانات JSON...
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 1: Rep & Machine Lookup Modal -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-[#030712]/85 backdrop-blur-md hidden transition-all p-3 sm:p-4" id="repLookupModal">
+    <div class="bg-[#0d1527] border border-[#1e293b] rounded-2xl w-full max-w-5xl mx-auto shadow-[0_20px_40px_-15px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[92vh]">
+        
+        <!-- 1. HEADER SECTION -->
+        <div class="p-4 bg-[#0a101d] border-b border-slate-800/80 flex items-center justify-between gap-4">
+            <!-- Close Button (زر الإغلاق في أقصى اليمين) -->
+            <button class="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700/60 shrink-0 cursor-pointer" onclick="closeRepLookupModal()" title="إغلاق النافذة">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+
+            <!-- Title & Icon (عنوان الكشف والأيقونة في الجهة المقابلة) -->
+            <div class="flex items-center gap-3">
+                <div class="text-left sm:text-right">
+                    <div class="flex items-center gap-2 flex-wrap justify-end">
+                        <span class="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full">
+                            Instant Lookup Engine
+                        </span>
+                        <h2 class="text-base font-extrabold text-white">مركز الاستعلام السريع عن المناديب والماكينات</h2>
+                    </div>
+                    <p class="text-xs text-slate-400 font-medium mt-0.5">
+                        استعلم فورياً عن كافة الماكينات المربوطة بمندوب معين أو افحص ماكينة محددة لمعرفة كافة المناديب المرتبطين بها.
+                    </p>
+                </div>
+                <div class="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center text-lg shrink-0" id="lookupHeaderIcon">
+                    <i class="fa-solid fa-address-card"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. MODE SELECTOR TABS -->
+        <div class="px-4 pt-3 pb-2 bg-[#090e1a] border-b border-slate-800/60 flex items-center justify-between gap-3 flex-wrap">
+            <div class="inline-flex rounded-xl p-1 bg-[#050811] border border-slate-800 text-xs font-bold shrink-0">
+                <button id="lookupTabRep" onclick="setLookupMode('rep')" class="px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer bg-blue-600 text-white shadow-md shadow-blue-600/30">
+                    <i class="fa-solid fa-user"></i>
+                    <span>1. استعلام عن مندوب (حساب / اسم)</span>
+                </button>
+                <button id="lookupTabMachine" onclick="setLookupMode('machine')" class="px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-mobile-screen-button"></i>
+                    <span>2. استعلام عن ماكينة (POS / SN)</span>
+                </button>
+            </div>
+            <div id="lookupStatusBadge" class="flex items-center gap-2 text-xs font-mono">
+                <!-- Dynamic Status Badge -->
+            </div>
+        </div>
+
+        <!-- 3. SEARCH & CHIPS TOOLBAR -->
+        <div class="p-4 bg-[#0a0f1a] border-b border-slate-800/80 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <!-- Search Input (يمين) -->
+                <div class="md:col-span-8 relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                    <input type="text" id="repLookupInput" autocomplete="off" autocorrect="off" spellcheck="false" oninput="renderRepLookupResults()" class="w-full bg-[#050811] border border-slate-700/80 rounded-xl pr-4 pl-16 py-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 font-mono font-semibold transition" placeholder="ابحث برقم الحساب أو اسم المندوب..." />
+                    <button type="button" id="clearRepLookupSearchBtn" onclick="clearRepLookupSearch()" class="hidden absolute left-8 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white items-center justify-center text-xs transition cursor-pointer" title="مسح البحث">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </div>
+                <!-- Dropdown Select (يسار) -->
+                <div class="md:col-span-4">
+                    <select id="repLookupSelect" onchange="selectRepFromDropdown(this.value)" class="w-full bg-[#050811] border border-slate-700/80 rounded-xl px-3 py-2.5 text-xs text-blue-400 font-bold focus:outline-none focus:border-blue-500 transition cursor-pointer"></select>
+                </div>
+            </div>
+
+            <!-- Chips Container -->
+            <div id="repQuickChipsContainer" class="flex items-center gap-2 overflow-x-auto pt-1 text-xs select-none"></div>
+        </div>
+
+        <!-- 4. SCROLLABLE BODY -->
+        <div class="p-4 overflow-y-auto space-y-4 bg-[#080c14] flex-1" id="repLookupContent">
+            <!-- Injected dynamically -->
+        </div>
+
+        <!-- 5. FOOTER ACTIONS -->
+        <div class="p-3 bg-[#0a0f1a] border-t border-slate-800/80 flex items-center justify-between gap-3">
+            <!-- زر إغلاق في أقصى اليمين -->
+            <button class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs px-4 py-2 rounded-xl border border-slate-700/60 transition cursor-pointer" onclick="closeRepLookupModal()">
+                إغلاق
+            </button>
+
+            <!-- زر عرض هذه الماكينات في أقصى الشمال -->
+            <button id="btnApplyLookupFilter" class="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-lg shadow-blue-600/25 transition flex items-center gap-2 cursor-pointer" onclick="applyRepFilterToMainTable()">
+                <i class="fa-solid fa-filter text-xs"></i>
+                <span>تطبيق البحث على الجدول الرئيسي</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 2: Reset Confirmation Modal -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden transition-all" id="resetConfirmModal">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center text-xl shrink-0">
+                <i class="fa-solid fa-trash-can"></i>
+            </div>
+            <div>
+                <h3 class="text-base font-black text-slate-900 dark:text-white">تأكيد مسح كافة البيانات</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">إعادة تعيين وتفريغ المنظومة بالكامل</p>
+            </div>
+        </div>
+        <p class="text-xs text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">هل أنت متأكد من رغبتك في مسح كافة الشيتات والنتائج وإرجاع البرنامج لوضعه الأولي؟</p>
+        <div class="flex items-center justify-end gap-2.5">
+            <button class="px-4 py-2 rounded-xl text-xs font-bold text-slate-500" onclick="closeResetModal()">إلغاء</button>
+            <button class="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow" onclick="performResetAll()">نعم، مسح كافة البيانات</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL 3: Online Table Editor Modal -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden transition-all" id="manualEditorModal">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-5xl mx-4 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+        <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h3 class="font-black text-white text-base">محرر القوالب التفاعلي أوفلاين (Online/Offline Table Editor)</h3>
+            <button class="w-9 h-9 rounded-xl bg-slate-800 text-slate-400 hover:text-white" onclick="closeManualEditor()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="px-6 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div class="flex gap-2">
+                <button class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 text-white" id="ed-btn-1" onclick="switchEditorMode(1)">قالب شيت الماكينات (Sheet 1)</button>
+                <button class="px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-400" id="ed-btn-2" onclick="switchEditorMode(2)">قالب شيت المناديب والحسابات (Sheet 2)</button>
+            </div>
+            <div class="flex gap-2">
+                <button class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-200" onclick="addEditorRow()"><i class="fa-solid fa-plus text-emerald-500 ml-1"></i> إضافة سطر</button>
+                <button class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-amber-400" onclick="loadDefaultEditorRows()"><i class="fa-solid fa-wand-magic-sparkles ml-1"></i> إعادة تعبئة عينة</button>
+            </div>
+        </div>
+        <div class="flex-1 overflow-auto p-6 bg-slate-50/50 dark:bg-[#070b13]">
+            <table class="w-full text-right border-collapse text-xs bg-white dark:bg-slate-900 rounded-2xl overflow-hidden">
+                <thead id="editorTableHead" class="bg-slate-100 dark:bg-slate-800 text-slate-300 font-bold border-b border-slate-800"></thead>
+                <tbody id="editorTableBody" class="divide-y divide-slate-800"></tbody>
+            </table>
+        </div>
+        <div class="p-4 border-t border-slate-800 bg-slate-900 flex justify-between">
+            <button class="px-4 py-2 rounded-xl text-xs text-slate-400" onclick="closeManualEditor()">إلغاء</button>
+            <button class="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold" onclick="applyEditorDataToSystem()"><i class="fa-solid fa-circle-check text-amber-300 ml-1"></i> اعتماد البيانات فوراً</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let sheet1 = [];
+    let sheet2 = [];
+    let expandedRows = [];
+    let machinesResults = [];
+    let duplicates = [];
+    let irregulars = [];
+    let activeEditorMode = 1;
+    let editorData = [];
+
+    function toggleDarkMode() {
+        const isDark = document.documentElement.classList.toggle('dark');
+        const icon = document.getElementById('themeToggleIcon');
+        if (icon) {
+            icon.className = isDark ? 'fa-solid fa-sun text-amber-400 animate-in fade-in' : 'fa-solid fa-moon text-amber-400 animate-in fade-in';
+        }
+    }
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+        }
+    }
+
+    function switchTab(num) {
+        for (let i = 1; i <= 5; i++) {
+            const c = document.getElementById(`tab-c-${i}`);
+            const b = document.getElementById(`tab-b-${i}`);
+            if (c) c.classList.add('hidden');
+            if (b) b.className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap cursor-pointer";
+        }
+        document.getElementById(`tab-c-${num}`).classList.remove('hidden');
+        document.getElementById(`tab-b-${num}`).className = "flex-1 py-2 px-3 rounded-xl font-bold text-xs bg-indigo-600 text-white whitespace-nowrap cursor-pointer";
+    }
+
+    function downloadTemplate(type, format) {
+        let filename = type === 1 ? 'نموذج_شيت_الماكينات_المستهدفة' : 'نموذج_شيت_ربط_المناديب_والحسابات';
+        let headers = type === 1 ? ['رقم الماكينة', 'الفرع / المنطقة', 'ملاحظات'] : ['رقم الماكينة', 'رقم حساب المندوب', 'اسم المندوب', 'حالة المندوب'];
+        let sample = type === 1 ? [
+            ['POS-1001', 'فرع المعادي - القاهرة', 'ماكينة رئيسية'],
+            ['POS-1002', 'فرع المهندسين - الجيزة', '']
+        ] : [
+            ['POS-1001', '1234', 'أحمد محمود سالم', 'نشط'],
+            ['POS-1001', '456', 'محمود حسن رضوان', 'نشط']
+        ];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+        XLSX.utils.book_append_sheet(wb, ws, "النموذج");
+        XLSX.writeFile(wb, `${filename}.${format}`);
+    }
+
+    function showProgress(title, fileName, subtitle, percent, stepText) {
+        const modal = document.getElementById('progressLoadingModal');
+        if (!modal) return;
+        document.getElementById('progressTitle').innerText = title || 'قراءة';
+        document.getElementById('progressFileName').innerText = fileName || 'نموذج_شيت_ربط_المناديب_والحسابات.csv';
+        document.getElementById('progressSubtitle').innerText = subtitle || 'جاري تحليل خلايا وسجلات ملف الإكسل...';
+        const p = Math.min(100, Math.max(0, Math.round(percent)));
+        document.getElementById('progressPercentBadge').innerText = `${p}%`;
+        document.getElementById('progressBarFill').style.width = `${p}%`;
+        document.getElementById('progressBottomPercent').innerText = `${p}%`;
+        document.getElementById('progressStepText').innerText = stepText || 'تحويل ورقة العمل إلى هيكل بيانات JSON...';
+        modal.classList.remove('hidden');
+    }
+
+    function hideProgress() {
+        const modal = document.getElementById('progressLoadingModal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    function loadSampleData() {
+        showProgress('قراءة', 'نموذج_شيت_ربط_المناديب_والحسابات.csv', 'جاري تحليل خلايا وسجلات ملف الإكسل...', 60, 'تحويل ورقة العمل إلى هيكل بيانات JSON...');
+        setTimeout(() => {
+            sheet1 = [
+                { "رقم الماكينة": "POS-100", "الفرع": "القاهرة - المعادي" },
+                { "رقم الماكينة": "POS-200", "الفرع": "الجيزة - الدقي" },
+                { "رقم الماكينة": "POS-300", "الفرع": "الإسكندرية - سموحة" },
+                { "رقم الماكينة": "POS-400", "الفرع": "المنصورة - المشاية" },
+                { "رقم الماكينة": "POS-500", "الفرع": "طنطا - المحطة" },
+                { "رقم الماكينة": "POS-600", "الفرع": "أسيوط - الجمهورية" },
+                { "رقم الماكينة": "POS-100", "الفرع": "القاهرة (تكرار)" }
+            ];
+
+            sheet2 = [
+                { "رقم الماكينة": "POS-100", "رقم حساب المندوب": "1234", "اسم المندوب": "أحمد محمود سالم" },
+                { "رقم الماكينة": "POS-100", "رقم حساب المندوب": "456", "اسم المندوب": "محمود حسن رضوان" },
+                { "رقم الماكينة": "POS-200", "رقم حساب المندوب": "555", "اسم المندوب": "" },
+                { "رقم الماكينة": "POS-300", "رقم حساب المندوب": "789", "اسم المندوب": "خالد عبد الرحمن" },
+                { "رقم الماكينة": "POS-300", "رقم حساب المندوب": "890", "اسم المندوب": "طارق زياد العتيبي" },
+                { "رقم الماكينة": "POS-300", "رقم حساب المندوب": "999", "اسم المندوب": "عمر فاروق الشامي" },
+                { "رقم الماكينة": "POS-400", "رقم حساب المندوب": "777-ERR", "اسم المندوب": "إبراهيم حسني مراد" }
+            ];
+
+            document.getElementById('status-name-1').innerText = "عينة_شيت_الماكينات.xlsx";
+            document.getElementById('badge-1').className = "text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded";
+            document.getElementById('badge-1').innerText = "تم (7)";
+
+            document.getElementById('status-name-2').innerText = "عينة_شيت_المناديب.xlsx";
+            document.getElementById('badge-2').className = "text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-1 rounded";
+            document.getElementById('badge-2').innerText = "تم (7)";
+
+            updateDropdowns();
+            runMatchingAlgorithm();
+            showProgress('قراءة', 'نموذج_شيت_ربط_المناديب_والحسابات.csv', 'اكتملت المعالجة بنجاح!', 100, 'تم تحميل العينة ومطابقة النتائج بنجاح');
+            setTimeout(hideProgress, 400);
+        }, 400);
+    }
+
+    function updateDropdowns() {
+        const sm1 = document.getElementById('map-m1');
+        const sm2 = document.getElementById('map-m2');
+        const sacc = document.getElementById('map-acc');
+        const srep = document.getElementById('map-rep');
+
+        if (sheet1.length) {
+            sm1.innerHTML = Object.keys(sheet1[0]).map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+        if (sheet2.length) {
+            const opts = Object.keys(sheet2[0]).map(c => `<option value="${c}">${c}</option>`).join('');
+            sm2.innerHTML = opts;
+            sacc.innerHTML = opts;
+            srep.innerHTML = opts;
+        }
+    }
+
+    function runMatchingAlgorithm() {
+        const colM1 = document.getElementById('map-m1').value || 'رقم الماكينة';
+        const colM2 = document.getElementById('map-m2').value || 'رقم الماكينة';
+        const colAcc = document.getElementById('map-acc').value || 'رقم حساب المندوب';
+        const colRep = document.getElementById('map-rep').value || 'اسم المندوب';
+
+        const repMap = new Map();
+        sheet2.forEach(row => {
+            const key = String(row[colM2] || '').trim();
+            if (!key) return;
+            const name = String(row[colRep] || '').trim() || 'لا يوجد مندوب';
+            const acc = String(row[colAcc] || 'غير متوفر').trim();
+            if (!repMap.has(key)) repMap.set(key, []);
+            repMap.get(key).push({ account: acc, name: name });
+        });
+
+        expandedRows = [];
+        machinesResults = [];
+        duplicates = [];
+        irregulars = [];
+        let rowCounter = 0;
+
+        // Audit duplicates in sheet1
+        const machineCounts = new Map();
+        sheet1.forEach((row, idx) => {
+            const m = String(row[colM1] || '').trim();
+            if (!m) return;
+            if (!machineCounts.has(m)) machineCounts.set(m, []);
+            machineCounts.get(m).push(idx + 1);
+        });
+        machineCounts.forEach((rows, m) => {
+            if (rows.length > 1) {
+                duplicates.push({ machine: m, count: rows.length, rows: rows });
+            }
+        });
+
+        // Audit irregulars in sheet2
+        sheet2.forEach((row) => {
+            const acc = String(row[colAcc] || '').trim();
+            const rep = String(row[colRep] || '').trim();
+            const m = String(row[colM2] || '').trim();
+            if (acc && acc !== 'غير متوفر') {
+                const hasSpecial = /[^0-9\-_]/i.test(acc);
+                const hasSpace = /\s/.test(acc);
+                const isShort = acc.length < 2;
+                if (hasSpecial || hasSpace || isShort) {
+                    irregulars.push({
+                        machine: m,
+                        account: acc,
+                        repName: rep || 'غير محدد',
+                        reason: hasSpace ? 'يحتوي على مسافات' : hasSpecial ? 'يحتوي على رموز/حروف' : 'قصير جداً'
+                    });
+                }
+            }
+        });
+
+        sheet1.forEach((row, idx) => {
+            const m = String(row[colM1] || '').trim();
+            if (!m) return;
+            const reps = repMap.get(m) || [];
+            const count = reps.length;
+            const status = count === 1 ? 'single' : count > 1 ? 'multi' : 'none';
+
+            machinesResults.push({ machine: m, repCount: count, reps: reps, status: status });
+
+            if (count === 0) {
+                rowCounter++;
+                expandedRows.push({
+                    id: rowCounter,
+                    machine: m,
+                    account: 'غير متوفر',
+                    repName: 'لا يوجد مندوب',
+                    repOrder: 0,
+                    totalRepsForMachine: 0,
+                    status: 'none'
+                });
+            } else {
+                reps.forEach((r, rIdx) => {
+                    rowCounter++;
+                    expandedRows.push({
+                        id: rowCounter,
+                        machine: m,
+                        account: r.account,
+                        repName: r.name,
+                        repOrder: rIdx + 1,
+                        totalRepsForMachine: count,
+                        status: status
+                    });
+                });
+            }
+        });
+
+        document.getElementById('stat-total').innerText = machinesResults.length;
+        document.getElementById('stat-total-rows').innerText = expandedRows.length;
+        document.getElementById('stat-single').innerText = machinesResults.filter(m => m.status === 'single').length;
+        document.getElementById('stat-multi').innerText = machinesResults.filter(m => m.status === 'multi').length;
+        document.getElementById('stat-none').innerText = machinesResults.filter(m => m.status === 'none').length;
+        document.getElementById('stat-duplicates').innerText = duplicates.length;
+        document.getElementById('stat-irregular').innerText = irregulars.length;
+        document.getElementById('tabCountBadge').innerText = expandedRows.length;
+        document.getElementById('auditAlertTotalBadge').innerText = duplicates.length + irregulars.length;
+
+        // Render audit tab lists
+        renderAuditTab();
+        renderTable();
+        switchTab(4);
+    }
+
+    let currentFilterStatus = 'all';
+    let currentViewMode = 'table';
+
+    function setFilterStatus(status) {
+        currentFilterStatus = status;
+        const btns = {
+            'all': document.getElementById('btnFilterAll'),
+            'single': document.getElementById('btnFilterSingle'),
+            'multi': document.getElementById('btnFilterMulti'),
+            'none': document.getElementById('btnFilterNone')
+        };
+        Object.keys(btns).forEach(k => {
+            if (btns[k]) {
+                if (k === status) {
+                    btns[k].className = "px-3 py-1.5 rounded-lg bg-indigo-600 text-white shadow-sm cursor-pointer";
+                } else {
+                    btns[k].className = "px-3 py-1.5 rounded-lg text-slate-300 hover:text-white cursor-pointer";
+                }
+            }
+        });
+        renderTable();
+    }
+
+    function setViewMode(mode) {
+        currentViewMode = mode;
+        const btnT = document.getElementById('viewBtnTable');
+        const btnC = document.getElementById('viewBtnCards');
+        if (mode === 'table') {
+            btnT.className = "px-3 py-1.5 rounded-lg bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer";
+            btnC.className = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer";
+        } else {
+            btnC.className = "px-3 py-1.5 rounded-lg bg-indigo-600 text-white shadow-sm flex items-center gap-1.5 transition-all cursor-pointer";
+            btnT.className = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer";
+        }
+        renderTable();
+    }
+
+    function renderAuditTab() {
+        const dupList = document.getElementById('auditDuplicatesList');
+        const irregList = document.getElementById('auditIrregList');
+        if (dupList) {
+            if (!duplicates.length) {
+                dupList.innerHTML = `<p class="text-xs text-emerald-500 font-bold">لا يوجد تكرار لماكينات داخل الشيت الأول.</p>`;
+            } else {
+                dupList.innerHTML = duplicates.map(d => `
+                    <div class="flex justify-between items-center py-1.5 border-b border-slate-700/50 text-xs">
+                        <span class="font-mono font-bold text-amber-400">${d.machine}</span>
+                        <span class="text-slate-400">تكررت ${d.count} مرات (أسطر: ${d.rows.join(', ')})</span>
+                    </div>
+                `).join('');
+            }
+        }
+        if (irregList) {
+            if (!irregulars.length) {
+                irregList.innerHTML = `<p class="text-xs text-emerald-500 font-bold">كافة أرقام الحسابات سليمة ومنتظمة.</p>`;
+            } else {
+                irregList.innerHTML = irregulars.map(r => `
+                    <div class="flex justify-between items-center py-1.5 border-b border-slate-700/50 text-xs">
+                        <div>
+                            <span class="font-mono font-bold text-rose-400">${r.account}</span>
+                            <span class="text-slate-400 mr-2">(${r.repName} - ماكينة ${r.machine})</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[10px] bg-rose-500/20 text-rose-300 font-bold">${r.reason}</span>
+                    </div>
+                `).join('');
+            }
+        }
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('resultsTableBody');
+        tbody.innerHTML = '';
+
+        if (!expandedRows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">لا توجد نتائج مطابقة.</td></tr>`;
+            return;
+        }
+
+        const rawQ = (document.getElementById('tableSearch')?.value || '');
+        const q = rawQ.trim().toLowerCase();
+        const clearBtn = document.getElementById('clearTableSearchBtn');
+        if (clearBtn) {
+            if (rawQ) {
+                clearBtn.classList.remove('hidden');
+                clearBtn.classList.add('flex');
+            } else {
+                clearBtn.classList.add('hidden');
+                clearBtn.classList.remove('flex');
+            }
+        }
+        let filtered = expandedRows.filter(r => {
+            const matchesQuery = !q || r.machine.toLowerCase().includes(q) || r.account.toLowerCase().includes(q) || r.repName.toLowerCase().includes(q);
+            const matchesStatus = currentFilterStatus === 'all' || r.status === currentFilterStatus;
+            return matchesQuery && matchesStatus;
+        });
+
+        if (document.getElementById('btnFilterAll')) {
+            document.getElementById('btnFilterAll').innerText = `الكل (${expandedRows.length})`;
+        }
+
+        filtered.forEach((item, idx) => {
+            const tr = document.createElement('tr');
+            tr.className = item.status === 'multi' ? 'bg-amber-500/[0.04] hover:bg-slate-800/60 transition-colors' : 'hover:bg-slate-800/50 transition-colors';
+
+            const accBtn = item.account === 'غير متوفر' ? '<span class="text-slate-500 text-xs">غير متوفر</span>' : 
+                `<button onclick="openRepLookupModal('${item.account}')" class="font-mono text-xs font-black px-3 py-1 rounded-lg bg-blue-950/60 text-blue-400 border border-blue-500/30 cursor-pointer hover:border-blue-400">${item.account}</button>`;
+
+            const repBtn = item.status === 'none' ? `<span class="text-rose-400 font-bold text-xs">لا يوجد مندوب</span>` :
+                `<button onclick="openRepLookupModal('${item.account}')" class="font-bold text-white text-xs hover:text-blue-400 cursor-pointer flex items-center gap-2">
+                    <div class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-blue-400 flex items-center justify-center text-[10px]"><i class="fa-solid fa-user"></i></div>
+                    <span>${item.repName}</span>
+                </button>`;
+
+            const orderBadge = item.status === 'multi' 
+                ? (item.repOrder === 1 
+                    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">المندوب الأول (${item.repOrder} من ${item.totalRepsForMachine})</span>`
+                    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700/60">مندوب إضافي (${item.repOrder} من ${item.totalRepsForMachine})</span>`)
+                : item.status === 'single' ? `<span class="text-xs font-bold text-emerald-400">المندوب الوحيد</span>` : `<span class="text-xs font-bold text-slate-500">-</span>`;
+
+            const statusBadge = item.status === 'multi'
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"><i class="fa-solid fa-users text-[10px]"></i><span>متعددة (${item.totalRepsForMachine} مناديب)</span></span>`
+                : item.status === 'single'
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-user-check text-[10px]"></i><span>مندوب واحد</span></span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20"><i class="fa-solid fa-circle-xmark text-[10px]"></i><span>شاغرة</span></span>`;
+
+            tr.innerHTML = `
+                <td class="p-3.5 text-center"><input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-indigo-600 cursor-pointer" /></td>
+                <td class="p-3.5 text-center text-slate-500 font-mono font-bold">${idx + 1}</td>
+                <td class="p-3.5 font-mono font-black text-white text-sm tracking-wide">${item.machine} ${item.repOrder > 1 ? '<span class="text-[10px] text-slate-400 font-sans font-normal px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/50 mr-1">(تابع)</span>' : ''}</td>
+                <td class="p-3.5">${accBtn}</td>
+                <td class="p-3.5">${repBtn}</td>
+                <td class="p-3.5 text-center">${orderBadge}</td>
+                <td class="p-3.5 text-center">${statusBadge}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function filterTable() { renderTable(); }
+
+    // Rep Lookup Modal Logic (Directly bound to Sheet 2 / Reconciled Results)
+    function getRepLookupDataSource() {
+        const colM = document.getElementById('map-m2')?.value || 'رقم الماكينة';
+        const colAcc = document.getElementById('map-acc')?.value || 'رقم حساب المندوب';
+        const colRep = document.getElementById('map-rep')?.value || 'اسم المندوب';
+
+        const repMap = new Map();
+        const machineMap = new Map();
+
+        if (expandedRows.length > 0) {
+            expandedRows.forEach(r => {
+                if (r.status === 'none') return;
+                const acc = (r.account || 'غير متوفر').trim();
+                const name = (r.repName || 'مندوب').trim();
+                const key = acc !== 'غير متوفر' ? acc.toLowerCase() : name.toLowerCase();
+
+                if (!repMap.has(key)) {
+                    repMap.set(key, { account: acc, name: name, machines: [] });
+                }
+                repMap.get(key).machines.push(r.machine);
+
+                if (!machineMap.has(r.machine)) {
+                    machineMap.set(r.machine, []);
+                }
+                const list = machineMap.get(r.machine);
+                list.push({ account: acc, name: name });
+            });
+        } else if (sheet2.length > 0) {
+            sheet2.forEach(row => {
+                const rawM = row[colM] !== undefined ? row[colM] : row['رقم الماكينة'] || Object.values(row)[0];
+                const rawAcc = row[colAcc] !== undefined ? row[colAcc] : row['رقم حساب المندوب'] || 'غير متوفر';
+                const rawRep = row[colRep] !== undefined ? row[colRep] : row['اسم المندوب'] || 'لا يوجد مندوب';
+
+                if (!rawM) return;
+                const machine = String(rawM).trim();
+                const acc = String(rawAcc || 'غير متوفر').trim();
+                const name = String(rawRep || 'مندوب').trim();
+                const key = acc !== 'غير متوفر' ? acc.toLowerCase() : name.toLowerCase();
+
+                if (!repMap.has(key)) {
+                    repMap.set(key, { account: acc, name: name, machines: [] });
+                }
+                repMap.get(key).machines.push(machine);
+
+                if (!machineMap.has(machine)) {
+                    machineMap.set(machine, []);
+                }
+                const list = machineMap.get(machine);
+                list.push({ account: acc, name: name });
+            });
+        }
+
+        const repsList = Array.from(repMap.values()).map(r => ({
+            account: r.account,
+            name: r.name,
+            count: r.machines.length,
+            machines: r.machines
+        })).sort((a, b) => b.count - a.count);
+
+        const machinesList = Array.from(machineMap.entries()).map(([m, reps]) => ({
+            machine: m,
+            repCount: reps.length,
+            reps: reps,
+            status: reps.length === 1 ? 'single' : reps.length > 1 ? 'multi' : 'none'
+        })).sort((a, b) => b.repCount - a.repCount);
+
+        return { repsList, machinesList, repMap, machineMap };
+    }
+
+    let currentLookupMode = 'rep'; // 'rep' or 'machine'
+
+    function setLookupMode(mode) {
+        currentLookupMode = mode;
+        const btnRep = document.getElementById('lookupTabRep');
+        const btnMach = document.getElementById('lookupTabMachine');
+        const input = document.getElementById('repLookupInput');
+        const icon = document.getElementById('lookupHeaderIcon');
+
+        if (mode === 'rep') {
+            btnRep.className = "px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer bg-blue-600 text-white shadow-md shadow-blue-600/30";
+            btnMach.className = "px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer text-slate-400 hover:text-white";
+            input.placeholder = "ابحث برقم حساب المندوب أو اسمه (مثال: 660508 أو محمد)...";
+            if (icon) icon.innerHTML = '<i class="fa-solid fa-address-card"></i>';
+        } else {
+            btnMach.className = "px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer bg-indigo-600 text-white shadow-md shadow-indigo-600/30";
+            btnRep.className = "px-4 py-2 rounded-lg flex items-center gap-2 transition-all cursor-pointer text-slate-400 hover:text-white";
+            input.placeholder = "ابحث برقم الماكينة (مثال: POS-100 أو 20500)...";
+            if (icon) icon.innerHTML = '<i class="fa-solid fa-mobile-screen-button"></i>';
+        }
+
+        input.value = '';
+        renderLookupDropdownAndChips();
+        renderRepLookupResults();
+    }
+
+    function renderLookupDropdownAndChips() {
+        const select = document.getElementById('repLookupSelect');
+        const chipsContainer = document.getElementById('repQuickChipsContainer');
+        const { repsList, machinesList } = getRepLookupDataSource();
+        const input = document.getElementById('repLookupInput');
+        const targetQuery = (input ? input.value : '').trim().toLowerCase();
+
+        if (currentLookupMode === 'rep') {
+            const cleanReps = repsList.filter(r => r.name !== 'لا يوجد مندوب' || r.account !== 'غير متوفر');
+            const filteredReps = targetQuery 
+                ? cleanReps.filter(r => r.name.toLowerCase().includes(targetQuery) || r.account.toLowerCase().includes(targetQuery))
+                : cleanReps;
+
+            select.innerHTML = `<option value="">-- اختر مندوب من القائمة (${cleanReps.length}) --</option>` + 
+                filteredReps.slice(0, 100).map(r => `<option value="${r.account !== 'غير متوفر' ? r.account : r.name}">${r.name} ${r.account !== 'غير متوفر' ? `(حساب: ${r.account})` : ''} • [${r.count} ماكينة]</option>`).join('');
+
+            if (chipsContainer) {
+                chipsContainer.innerHTML = `<span class="text-slate-400 text-xs shrink-0 font-bold ml-1">أبرز المناديب:</span>` +
+                    (cleanReps.length > 0 ? cleanReps.slice(0, 8).map(r => {
+                        const isActive = targetQuery && (targetQuery === r.account.toLowerCase() || targetQuery === r.name.toLowerCase());
+                        return `<button onclick="selectRepFromDropdown('${r.account !== 'غير متوفر' ? r.account : r.name}')" class="px-3 py-1 rounded-lg shrink-0 transition cursor-pointer flex items-center gap-1.5 font-bold ${isActive ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-600/20' : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/70'}">
+                            <span>${r.name !== 'لا يوجد مندوب' ? r.name : ''} ${r.account !== 'غير متوفر' ? `(${r.account})` : ''}</span>
+                            ${isActive ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}
+                        </button>`;
+                    }).join('') : '<span class="text-xs text-slate-500">ارفع شيت المناديب لتظهر هنا.</span>');
+            }
+        } else {
+            const filteredMachines = targetQuery
+                ? machinesList.filter(m => m.machine.toLowerCase().includes(targetQuery))
+                : machinesList;
+
+            select.innerHTML = `<option value="">-- اختر ماكينة من القائمة (${machinesList.length}) --</option>` + 
+                filteredMachines.slice(0, 100).map(m => `<option value="${m.machine}">${m.machine} • [${m.repCount} مناديب] ${m.status === 'multi' ? '⚠️ مشتركة' : m.status === 'single' ? '✅ منفردة' : '❌ شاغرة'}</option>`).join('');
+
+            if (chipsContainer) {
+                chipsContainer.innerHTML = `<span class="text-slate-400 text-xs shrink-0 font-bold ml-1">أبرز الماكينات:</span>` +
+                    (machinesList.length > 0 ? machinesList.slice(0, 8).map(m => {
+                        const isActive = targetQuery && targetQuery === m.machine.toLowerCase();
+                        return `<button onclick="selectRepFromDropdown('${m.machine}')" class="px-3 py-1 rounded-lg shrink-0 transition cursor-pointer flex items-center gap-1.5 font-bold font-mono ${isActive ? 'bg-indigo-600 text-white border border-indigo-500 shadow-md shadow-indigo-600/20' : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700/70'}">
+                            <span>${m.machine}</span>
+                            <span class="text-[10px] px-1.5 py-0.2 rounded bg-slate-900/80 text-slate-400 font-sans">${m.repCount} مناديب</span>
+                            ${isActive ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}
+                        </button>`;
+                    }).join('') : '<span class="text-xs text-slate-500">ارفع شيت الماكينات لتظهر هنا.</span>');
+            }
+        }
+    }
+
+    function clearTableSearch() {
+        const input = document.getElementById('tableSearch');
+        if (input) {
+            input.value = '';
+            filterTable();
+            input.focus();
+        }
+    }
+
+    function clearRepLookupSearch() {
+        const input = document.getElementById('repLookupInput');
+        if (input) {
+            input.value = '';
+            renderLookupDropdownAndChips();
+            renderRepLookupResults();
+            input.focus();
+        }
+    }
+
+    function openRepLookupModal(query = '', mode = 'rep') {
+        const modal = document.getElementById('repLookupModal');
+        const input = document.getElementById('repLookupInput');
+        const badge = document.getElementById('lookupStatusBadge');
+
+        const { repsList, machinesList } = getRepLookupDataSource();
+        const totalRecords = sheet2.length || sheet1.length || expandedRows.length;
+
+        if (badge) {
+            if (totalRecords > 0) {
+                badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                    <i class="fa-solid fa-circle-check text-xs"></i>
+                    <span>تم قراءة الشيت بنجاح (${totalRecords.toLocaleString()} سجل)</span>
+                </span>`;
+            } else {
+                badge.innerHTML = `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
+                    <i class="fa-solid fa-circle-exclamation text-xs"></i>
+                    <span>لم يتم رفع شيت بعد</span>
+                </span>`;
+            }
+        }
+
+        currentLookupMode = mode;
+        setLookupMode(mode);
+
+        const targetQuery = query || '';
+        input.value = targetQuery;
+
+        modal.classList.remove('hidden');
+        renderLookupDropdownAndChips();
+        renderRepLookupResults();
+    }
+
+    function closeRepLookupModal() {
+        document.getElementById('repLookupModal').classList.add('hidden');
+    }
+
+    function selectRepFromDropdown(val) {
+        document.getElementById('repLookupInput').value = val;
+        renderLookupDropdownAndChips();
+        renderRepLookupResults();
+    }
+
+    function renderRepLookupResults() {
+        const rawQ = (document.getElementById('repLookupInput').value || '');
+        const q = rawQ.trim().toLowerCase();
+        const container = document.getElementById('repLookupContent');
+        const clearBtn = document.getElementById('clearRepLookupSearchBtn');
+
+        if (clearBtn) {
+            if (rawQ) {
+                clearBtn.classList.remove('hidden');
+                clearBtn.classList.add('flex');
+            } else {
+                clearBtn.classList.add('hidden');
+                clearBtn.classList.remove('flex');
+            }
+        }
+
+        const { repsList, machinesList, machineMap, repMap } = getRepLookupDataSource();
+        const totalRecords = sheet2.length || sheet1.length || expandedRows.length;
+        const isSheetLoaded = totalRecords > 0;
+
+        // 1. EMPTY SEARCH STATE: Clean confirming sheet is read
+        if (!q) {
+            container.innerHTML = `
+                <div class="py-12 px-6 text-center space-y-4 bg-[#090e1a] rounded-2xl border border-slate-800/80 shadow-inner">
+                    <div class="w-16 h-16 rounded-3xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400">
+                        <i class="fa-solid fa-file-circle-check text-2xl text-blue-400"></i>
+                    </div>
+                    
+                    <div class="space-y-1 max-w-md mx-auto">
+                        <h3 class="text-base font-extrabold text-white">
+                            ${isSheetLoaded ? 'الشيت مقروء بالكامل وجاهز للاستعلام' : 'في انتظار رفع الشيتات'}
+                        </h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            ${isSheetLoaded
+                                ? `تم تحليل ${totalRecords.toLocaleString()} سجلاً بنجاح. اكتب رقم الحساب أو الماكينة في شريط البحث أعلاه أو اضغط على أحد المناديب/الماكينات لعرض التقرير الفوري.`
+                                : 'يرجى رفع شيت الماكينات وشيت المناديب من الشاشة الرئيسية، أو اختيار «عينة فورية» للاختبار.'}
+                        </p>
+                    </div>
+
+                    ${isSheetLoaded ? `
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg mx-auto pt-2">
+                            <div class="p-3 bg-[#050811] rounded-xl border border-slate-800 text-center">
+                                <span class="text-[10px] text-slate-400 font-bold block">إجمالي السجلات</span>
+                                <span class="text-lg font-mono font-black text-blue-400">${totalRecords.toLocaleString()}</span>
+                            </div>
+                            <div class="p-3 bg-[#050811] rounded-xl border border-slate-800 text-center">
+                                <span class="text-[10px] text-slate-400 font-bold block">المناديب الفريدة</span>
+                                <span class="text-lg font-mono font-black text-emerald-400">${repsList.length.toLocaleString()}</span>
+                            </div>
+                            <div class="p-3 bg-[#050811] rounded-xl border border-slate-800 text-center col-span-2 sm:col-span-1">
+                                <span class="text-[10px] text-slate-400 font-bold block">الماكينات المفحوصة</span>
+                                <span class="text-lg font-mono font-black text-indigo-400">${machinesList.length.toLocaleString()}</span>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            return;
+        }
+
+        // 2. MODE: REP LOOKUP
+        if (currentLookupMode === 'rep') {
+            const matchedRep = repsList.find(r => r.account.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+
+            if (!matchedRep || matchedRep.machines.length === 0) {
+                container.innerHTML = `
+                    <div class="py-12 text-center space-y-3 bg-[#090e18] rounded-2xl border border-slate-800 p-8">
+                        <i class="fa-solid fa-circle-exclamation text-amber-500 text-3xl"></i>
+                        <h4 class="font-bold text-white text-sm">لم يتم العثور على مندوب يطابق: «${rawQ}»</h4>
+                        <p class="text-xs text-slate-400">يرجى التأكد من كتابة رقم الحساب أو الاسم بشكل صحيح، أو اختر من القائمة المنسدلة بالأعلى.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const repName = matchedRep.name;
+            const repAcc = matchedRep.account;
+            const machines = matchedRep.machines;
+
+            let soleCount = 0;
+            let sharedCount = 0;
+
+            let rowsHtml = machines.map((mId, i) => {
+                const allReps = machineMap.get(mId) || [{ account: repAcc, name: repName }];
+                const totalReps = allReps.length;
+
+                // Find index of current representative instance on this specific row index to exclude only this specific assignment
+                const currentIdx = allReps.findIndex(r => r.account === repAcc && r.name === repName);
+                const otherReps = allReps.filter((_, rIdx) => rIdx !== currentIdx);
+
+                if (totalReps === 1) soleCount++;
+                else sharedCount++;
+
+                const coRepsHtml = otherReps.length > 0
+                    ? otherReps.map(r => `<span onclick="selectRepFromDropdown('${r.account !== 'غير متوفر' ? r.account : r.name}')" class="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 text-[11px] hover:text-blue-400 hover:border-blue-500 cursor-pointer transition" title="اضغط للاستعلام عن هذا المندوب">${r.name} ${r.account !== 'غير متوفر' ? `(${r.account})` : ''}</span>`).join(' ')
+                    : '<span class="text-slate-500 text-xs">لا يوجد شركاء (المندوب الوحيد لهذه الماكينة)</span>';
+
+                return `
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="p-3 text-center font-mono text-slate-500 font-bold">${i + 1}</td>
+                        <td class="p-3 font-bold font-mono text-white text-sm">${mId}</td>
+                        <td class="p-3 text-center">
+                            ${totalReps === 1 
+                                ? `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold">خاصة بالمندوب فقط</span>`
+                                : `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold">مشتركة</span>`
+                            }
+                        </td>
+                        <td class="p-3 text-center font-mono font-bold">
+                            ${totalReps === 1 ? `<span class="text-emerald-400">1 مندوب</span>` : `<span class="text-amber-400">${totalReps} مناديب</span>`}
+                        </td>
+                        <td class="p-3">${coRepsHtml}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="setLookupMode('machine'); document.getElementById('repLookupInput').value='${mId}'; renderLookupDropdownAndChips(); renderRepLookupResults();" class="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-[11px] font-bold transition cursor-pointer">
+                                فحص الماكينة
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <!-- REP PROFILE & KPI CARDS -->
+                <div class="p-4 rounded-2xl bg-[#0b1222] border border-slate-800 shadow-md">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/30 text-blue-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="text-base font-extrabold text-white">${repName}</h3>
+                                    <span class="font-mono text-xs font-bold px-2.5 py-0.5 rounded-lg bg-blue-950 text-blue-400 border border-blue-500/30">حساب: ${repAcc}</span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">بيان تفصيلي بجميع ماكينات هذا المندوب وحالة الاشتراك والتعدد لكل جهاز.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+                            <div class="px-3.5 py-2 rounded-xl bg-[#050811] border border-slate-800 text-center min-w-[90px]">
+                                <span class="text-[10px] text-slate-400 font-bold block">إجمالي الماكينات</span>
+                                <span class="text-base font-mono font-black text-blue-400">${machines.length}</span>
+                            </div>
+                            <div class="px-3.5 py-2 rounded-xl bg-[#050811] border border-emerald-900/40 text-center min-w-[90px]">
+                                <span class="text-[10px] text-emerald-400 font-bold block">منفردة (خاصة)</span>
+                                <span class="text-base font-mono font-black text-emerald-400">${soleCount}</span>
+                            </div>
+                            <div class="px-3.5 py-2 rounded-xl bg-[#050811] border border-amber-900/40 text-center min-w-[90px]">
+                                <span class="text-[10px] text-amber-400 font-bold block">مشتركة (متعددة)</span>
+                                <span class="text-base font-mono font-black text-amber-400">${sharedCount}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MACHINES TABLE CONTAINER -->
+                <div class="border border-slate-800 rounded-2xl overflow-hidden bg-[#090e1a]">
+                    <div class="p-3 bg-[#060a14] border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2 text-xs font-bold text-white">
+                            <i class="fa-solid fa-layer-group text-blue-400"></i>
+                            <span>قائمة الماكينات المربوطة (${machines.length})</span>
+                        </div>
+                        
+                        <button onclick="exportRepExcel('${repName}', '${repAcc}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md">
+                            <i class="fa-solid fa-file-excel"></i>
+                            <span>تصدير بيان المندوب Excel</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto max-h-[40vh]">
+                        <table class="w-full text-right border-collapse text-xs">
+                            <thead class="bg-[#050811] text-slate-400 font-bold border-b border-slate-800 sticky top-0">
+                                <tr>
+                                    <th class="p-3 w-12 text-center font-mono">م</th>
+                                    <th class="p-3 w-40">رقم الماكينة</th>
+                                    <th class="p-3 w-36 text-center">نوع الملكية</th>
+                                    <th class="p-3 w-32 text-center">التعدد</th>
+                                    <th class="p-3">المناديب المشاركون على نفس الماكينة</th>
+                                    <th class="p-3 w-28 text-center">فحص الماكينة</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/80 text-slate-300">
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        // 3. MODE: MACHINE LOOKUP
+        if (currentLookupMode === 'machine') {
+            const matchedMach = machinesList.find(m => m.machine.toLowerCase().includes(q));
+
+            if (!matchedMach) {
+                container.innerHTML = `
+                    <div class="py-12 text-center space-y-3 bg-[#090e18] rounded-2xl border border-slate-800 p-8">
+                        <i class="fa-solid fa-circle-exclamation text-amber-500 text-3xl"></i>
+                        <h4 class="font-bold text-white text-sm">لم يتم العثور على ماكينة تطابق: «${rawQ}»</h4>
+                        <p class="text-xs text-slate-400">يرجى التأكد من كتابة رقم الماكينة بشكل صحيح (مثال: POS-100)، أو اختر من القائمة المنسدلة.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const reps = matchedMach.reps || [];
+
+            let repsRowsHtml = reps.length === 0 ? `
+                <tr><td colspan="6" class="p-8 text-center text-rose-400 font-bold">هذه الماكينة شاغرة ولم يتم إسناد أي مندوب لها في الشيت المرفوع.</td></tr>
+            ` : reps.map((r, idx) => `
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="p-3 text-center text-slate-500 font-mono font-bold">${idx + 1}</td>
+                    <td class="p-3 font-mono font-bold text-blue-400">${r.account !== 'غير متوفر' ? r.account : '<span class="text-slate-500">غير متوفر</span>'}</td>
+                    <td class="p-3 font-bold text-white flex items-center gap-2">
+                        <div class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 text-blue-400 flex items-center justify-center text-[10px]">
+                            <i class="fa-solid fa-user"></i>
+                        </div>
+                        <span>${r.name}</span>
+                    </td>
+                    <td class="p-3 text-center">
+                        <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700/60">
+                            مندوب ${idx + 1} من ${matchedMach.repCount}
+                        </span>
+                    </td>
+                    <td class="p-3 text-center">
+                        ${matchedMach.repCount === 1 ? '<span class="text-emerald-400 font-bold">منفرد (الوحيد)</span>' : '<span class="text-amber-400 font-bold">مشترك</span>'}
+                    </td>
+                    <td class="p-3 text-center">
+                        <button onclick="setLookupMode('rep'); document.getElementById('repLookupInput').value='${r.account !== 'غير متوفر' ? r.account : r.name}'; renderLookupDropdownAndChips(); renderRepLookupResults();" class="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-[11px] font-bold transition cursor-pointer">
+                            كشف ماكيناته
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            container.innerHTML = `
+                <!-- MACHINE PROFILE CARD -->
+                <div class="p-4 rounded-2xl bg-[#0b1222] border border-slate-800 shadow-md">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div class="flex items-center gap-3.5">
+                            <div class="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center text-xl font-bold">
+                                <i class="fa-solid fa-mobile-screen-button"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h3 class="text-base font-black font-mono text-white tracking-wide">ماكينة: ${matchedMach.machine}</h3>
+                                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-lg border ${
+                                        matchedMach.status === 'single' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                                        matchedMach.status === 'multi' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                                        'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                    }">
+                                        ${matchedMach.status === 'single' ? 'مندوب واحد (1/1)' : matchedMach.status === 'multi' ? `مشتركة (${matchedMach.repCount} مناديب)` : 'شاغرة بدون مندوب'}
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">تقرير تفصيلي بكافة أرقام حسابات وأسماء المناديب المربوطين بهذا الجهاز.</p>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+                            <div class="px-4 py-2 rounded-xl bg-[#050811] border border-slate-800 text-center min-w-[100px]">
+                                <span class="text-[10px] text-slate-400 font-bold block">عدد المناديب</span>
+                                <span class="text-base font-mono font-black text-indigo-400">${matchedMach.repCount}</span>
+                            </div>
+                            <div class="px-4 py-2 rounded-xl bg-[#050811] border border-slate-800 text-center min-w-[100px]">
+                                <span class="text-[10px] text-slate-400 font-bold block">حالة الماكينة</span>
+                                <span class="text-xs font-bold text-white">${matchedMach.repCount === 1 ? 'منفردة' : matchedMach.repCount > 1 ? 'مشتركة' : 'شاغرة'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- REPS ON MACHINE TABLE -->
+                <div class="border border-slate-800 rounded-2xl overflow-hidden bg-[#090e1a]">
+                    <div class="p-3 bg-[#060a14] border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2 text-xs font-bold text-white">
+                            <i class="fa-solid fa-users text-indigo-400"></i>
+                            <span>المناديب المسندة لهذه الماكينة (${matchedMach.reps.length})</span>
+                        </div>
+                        
+                        <button onclick="exportMachineExcel('${matchedMach.machine}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-md">
+                            <i class="fa-solid fa-file-excel"></i>
+                            <span>تصدير بيان الماكينة Excel</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto max-h-[40vh]">
+                        <table class="w-full text-right border-collapse text-xs">
+                            <thead class="bg-[#050811] text-slate-400 font-bold border-b border-slate-800 sticky top-0">
+                                <tr>
+                                    <th class="p-3 w-12 text-center font-mono">م</th>
+                                    <th class="p-3 w-40">رقم حساب المندوب</th>
+                                    <th class="p-3">اسم المندوب المسند</th>
+                                    <th class="p-3 w-40 text-center">الترتيب</th>
+                                    <th class="p-3 w-36 text-center">نوع التخصيص</th>
+                                    <th class="p-3 w-32 text-center">استعلام المندوب</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800/80 text-slate-300">
+                                ${repsRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    function exportMachineExcel(machineId) {
+        const { machinesList } = getRepLookupDataSource();
+        const found = machinesList.find(m => m.machine.toLowerCase() === machineId.toLowerCase());
+        if (!found) return;
+
+        const data = [
+            ['بيان المناديب المربوطين بالماكينة'],
+            ['رقم الماكينة:', found.machine],
+            ['حالة الماكينة:', found.status === 'single' ? 'مندوب واحد (1/1)' : found.status === 'multi' ? `متعددة المناديب (${found.repCount} مناديب)` : 'شاغرة بدون مندوب'],
+            ['إجمالي المناديب المربوطين:', found.repCount],
+            [],
+            ['م', 'رقم حساب المندوب', 'اسم المندوب', 'ترتيب التخصيص', 'نوع التخصيص']
+        ];
+
+        if (found.reps.length === 0) {
+            data.push([1, 'غير متوفر', 'لا يوجد مندوب', '-', 'شاغرة']);
+        } else {
+            found.reps.forEach((r, idx) => {
+                data.push([
+                    idx + 1,
+                    r.account,
+                    r.name,
+                    `مندوب ${idx + 1} من ${found.repCount}`,
+                    found.repCount === 1 ? 'منفرد' : 'مشترك'
+                ]);
+            });
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, `ماكينة_${found.machine}`);
+        XLSX.writeFile(wb, `بيان_ماكينة_${found.machine}_المناديب.xlsx`);
+    }
+
+    function exportRepExcel(name, acc) {
+        const q = (document.getElementById('repLookupInput').value || '').trim().toLowerCase();
+        const matched = machinesResults.filter(m => 
+            m.reps.some(r => r.account.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+        );
+        if (!matched.length) return;
+
+        const data = [
+            ['كشف الماكينات المربوطة بالمندوب'],
+            ['اسم المندوب:', name],
+            ['رقم الحساب:', acc],
+            ['إجمالي الماكينات المربوطة:', matched.length],
+            [],
+            ['م', 'رقم الماكينة', 'حالة الماكينة', 'تعدد المناديب', 'المناديب المشاركون على نفس الماكينة']
+        ];
+
+        matched.forEach((m, idx) => {
+            const coReps = m.reps.filter(r => r.account !== acc).map(r => `${r.name} (${r.account})`).join(' ، ');
+            data.push([
+                idx + 1,
+                m.machine,
+                m.repCount === 1 ? 'خاصة فقط' : 'مشتركة',
+                `${m.repCount} مناديب`,
+                coReps || 'لا يوجد'
+            ]);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, `كشف_${acc}`);
+        XLSX.writeFile(wb, `كشف_ماكينات_المندوب_${name}_${acc}.xlsx`);
+    }
+
+    function applyRepFilterToMainTable() {
+        const q = document.getElementById('repLookupInput').value;
+        document.getElementById('tableSearch').value = q;
+        filterTable();
+        closeRepLookupModal();
+        switchTab(4);
+    }
+
+    // Reset Modal
+    function openResetModal() { document.getElementById('resetConfirmModal').classList.remove('hidden'); }
+    function closeResetModal() { document.getElementById('resetConfirmModal').classList.add('hidden'); }
+    function performResetAll() {
+        sheet1 = []; sheet2 = []; expandedRows = []; machinesResults = []; duplicates = []; irregulars = [];
+        
+        document.getElementById('status-name-1').innerText = "لم يتم الرفع";
+        document.getElementById('badge-1').className = "text-[11px] font-bold text-rose-400 bg-[#200d14] border border-rose-500/30 px-2.5 py-1 rounded-lg";
+        document.getElementById('badge-1').innerText = "غير مرفوع";
+
+        document.getElementById('status-name-2').innerText = "لم يتم الرفع";
+        document.getElementById('badge-2').className = "text-[11px] font-bold text-rose-400 bg-[#200d14] border border-rose-500/30 px-2.5 py-1 rounded-lg";
+        document.getElementById('badge-2').innerText = "غير مرفوع";
+
+        document.getElementById('uploadStatusBadge').innerText = "بانتظار الملفات";
+        document.getElementById('uploadStatusBadge').className = "text-[10px] font-bold px-2.5 py-0.5 rounded-md text-amber-400 bg-amber-950/60 border border-amber-500/30";
+
+        document.getElementById('stat-total').innerText = "0";
+        document.getElementById('stat-total-rows').innerText = "0";
+        document.getElementById('stat-single').innerText = "0";
+        document.getElementById('stat-multi').innerText = "0";
+        document.getElementById('stat-none').innerText = "0";
+        document.getElementById('stat-duplicates').innerText = "0";
+        document.getElementById('stat-irregular').innerText = "0";
+        document.getElementById('tabCountBadge').innerText = "0";
+        document.getElementById('auditAlertTotalBadge').innerText = "0";
+
+        const tbody = document.getElementById('resultsTableBody');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">لا توجد نتائج مطابقة. يرجى رفع الشيتات أولاً.</td></tr>`;
+
+        closeResetModal();
+        switchTab(1);
+    }
+
+    // Online Manual Editor
+    function openManualEditor(mode = 1) {
+        activeEditorMode = mode;
+        loadDefaultEditorRows();
+        document.getElementById('manualEditorModal').classList.remove('hidden');
+    }
+    function closeManualEditor() { document.getElementById('manualEditorModal').classList.add('hidden'); }
+    function switchEditorMode(mode) { activeEditorMode = mode; loadDefaultEditorRows(); }
+
+    function loadDefaultEditorRows() {
+        const thead = document.getElementById('editorTableHead');
+        if (activeEditorMode === 1) {
+            thead.innerHTML = `<tr><th class="p-3 w-12 text-center">م</th><th class="p-3">رقم الماكينة *</th><th class="p-3">الفرع / المنطقة</th></tr>`;
+            editorData = [
+                { c1: 'POS-1001', c2: 'فرع المعادي' },
+                { c1: 'POS-1002', c2: 'فرع الدقي' }
+            ];
+        } else {
+            thead.innerHTML = `<tr><th class="p-3 w-12 text-center">م</th><th class="p-3">رقم الماكينة *</th><th class="p-3">رقم حساب المندوب *</th><th class="p-3">اسم المندوب</th></tr>`;
+            editorData = [
+                { c1: 'POS-1001', c2: '1234', c3: 'أحمد محمود' },
+                { c1: 'POS-1001', c2: '456', c3: 'محمود حسن' }
+            ];
+        }
+        renderEditorTable();
+    }
+
+    function renderEditorTable() {
+        const tbody = document.getElementById('editorTableBody');
+        tbody.innerHTML = '';
+        editorData.forEach((r, i) => {
+            const tr = document.createElement('tr');
+            if (activeEditorMode === 1) {
+                tr.innerHTML = `
+                    <td class="p-2 text-center text-slate-400">${i+1}</td>
+                    <td class="p-2"><input type="text" class="w-full p-1 bg-slate-800 text-white rounded" value="${r.c1}" onchange="editorData[${i}].c1=this.value" /></td>
+                    <td class="p-2"><input type="text" class="w-full p-1 bg-slate-800 text-white rounded" value="${r.c2}" onchange="editorData[${i}].c2=this.value" /></td>
+                `;
+            } else {
+                tr.innerHTML = `
+                    <td class="p-2 text-center text-slate-400">${i+1}</td>
+                    <td class="p-2"><input type="text" class="w-full p-1 bg-slate-800 text-white rounded" value="${r.c1}" onchange="editorData[${i}].c1=this.value" /></td>
+                    <td class="p-2"><input type="text" class="w-full p-1 bg-slate-800 text-white rounded" value="${r.c2}" onchange="editorData[${i}].c2=this.value" /></td>
+                    <td class="p-2"><input type="text" class="w-full p-1 bg-slate-800 text-white rounded" value="${r.c3||''}" onchange="editorData[${i}].c3=this.value" /></td>
+                `;
+            }
+            tbody.appendChild(tr);
+        });
+    }
+
+    function addEditorRow() {
+        editorData.push({ c1: '', c2: '', c3: '' });
+        renderEditorTable();
+    }
+
+    function applyEditorDataToSystem() {
+        if (activeEditorMode === 1) {
+            sheet1 = editorData.filter(r => r.c1).map(r => ({ "رقم الماكينة": r.c1, "الفرع": r.c2 }));
+        } else {
+            sheet2 = editorData.filter(r => r.c1).map(r => ({ "رقم الماكينة": r.c1, "رقم حساب المندوب": r.c2, "اسم المندوب": r.c3 }));
+        }
+        updateDropdowns();
+        runMatchingAlgorithm();
+        closeManualEditor();
+    }
+
+    function exportResultsExcel() {
+        const data = [["م", "رقم الماكينة", "رقم حساب المندوب", "اسم المندوب", "الترتيب", "الحالة"]];
+        expandedRows.forEach((r, i) => {
+            data.push([i + 1, r.machine, r.account, r.repName, `مندوب ${r.repOrder} من ${r.totalRepsForMachine}`, r.status]);
+        });
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, "تقرير_الماكينات");
+        XLSX.writeFile(wb, "تقرير_مطابقة_الماكينات.xlsx");
+    }
+
+    function downloadCurrentHTML() {
+        const htmlContent = document.documentElement.outerHTML;
+        const blob = new Blob(["<!DOCTYPE html>\n" + htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "MatchHub-Enterprise-Desktop-v5.html";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // Auto load sample on start
+    window.onload = function() {
+        loadSampleData();
+    };
+</script>
+</body>
+</html>

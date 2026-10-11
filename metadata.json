@@ -1,0 +1,8 @@
+{
+  "name": "Remix MatchHub Desktop - مطابقة الماكينات وحسابات المناديب",
+  "description": "برنامج سطح المكتب المتقدم لمطابقة ماكينات الدفع بحسابات ومناديب التوزيع وتفصيل الأسطر والنزاعات أوفلاين.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
