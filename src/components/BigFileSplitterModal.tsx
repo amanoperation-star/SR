@@ -77,94 +77,111 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
   const numChunks = Math.ceil(totalRows / chunkSize);
 
   // 1. Export as Multi-Sheet Excel Workbook (Each sheet <= chunkSize rows)
-  const exportMultiSheetExcel = () => {
+  const exportMultiSheetExcel = async () => {
     if (!parsedRows || parsedRows.length === 0) return;
     setIsProcessing(true);
     setStatusText('جاري إنشاء ملف الإكسل متعدد الشيتات وتوزيع الصفوف...');
 
-    setTimeout(() => {
-      try {
-        const wb = XLSX.utils.book_new();
-        const headers = Object.keys(parsedRows[0]).filter((k) => !k.startsWith('_'));
-        const labelPrefix = sheetType === 'payments' ? 'مدفوعات' : 'كاش';
+    try {
+      const wb = XLSX.utils.book_new();
+      const headers = Object.keys(parsedRows[0]).filter((k) => !k.startsWith('_'));
+      const labelPrefix = sheetType === 'payments' ? 'مدفوعات' : 'كاش';
 
-        for (let i = 0; i < numChunks; i++) {
-          const start = i * chunkSize;
-          const end = Math.min(start + chunkSize, totalRows);
-          const chunk = parsedRows.slice(start, end);
+      for (let i = 0; i < numChunks; i++) {
+        setStatusText(`جاري تجهيز وتوزيع ورقة العمل ${i + 1} من ${numChunks}...`);
+        await new Promise((r) => setTimeout(r, 10));
 
-          const aoa: any[][] = [headers];
-          for (let r = 0; r < chunk.length; r++) {
-            const rowObj = chunk[r];
-            aoa.push(headers.map((h) => rowObj[h] ?? ''));
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, totalRows);
+        const chunk = parsedRows.slice(start, end);
+
+        const aoa: any[][] = [headers];
+        for (let r = 0; r < chunk.length; r++) {
+          const rowObj = chunk[r];
+          aoa.push(headers.map((h) => rowObj[h] ?? ''));
+          if (r > 0 && r % 15000 === 0) {
+            await new Promise((res) => setTimeout(res, 0));
           }
-
-          const ws = XLSX.utils.aoa_to_sheet(aoa);
-          XLSX.utils.book_append_sheet(wb, ws, `${labelPrefix}_جزء_${i + 1}_من_${numChunks}`);
         }
 
-        const baseName = selectedFile?.name.replace(/\.[^/.]+$/, '') || `ملف_${labelPrefix}_المقسم`;
-        XLSX.writeFile(wb, `${baseName}_مقسم_شيتات_Excel.xlsx`);
-        setStatusText('✅ تم تصدير ملف الإكسل متعدد الشيتات بنجاح!');
-      } catch (err: any) {
-        setErrorMessage('تعذر تصدير الملف: ' + err.message);
-      } finally {
-        setIsProcessing(false);
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        XLSX.utils.book_append_sheet(wb, ws, `${labelPrefix}_جزء_${i + 1}_من_${numChunks}`);
       }
-    }, 50);
+
+      setStatusText('جاري ضغط وحفظ ملف الإكسل...');
+      await new Promise((r) => setTimeout(r, 20));
+
+      const baseName = selectedFile?.name.replace(/\.[^/.]+$/, '') || `ملف_${labelPrefix}_المقسم`;
+      XLSX.writeFile(wb, `${baseName}_مقسم_شيتات_Excel.xlsx`);
+      setStatusText('✅ تم تصدير ملف الإكسل متعدد الشيتات بنجاح!');
+    } catch (err: any) {
+      setErrorMessage('تعذر تصدير الملف: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // 2. Export as Full CSV (No row limits)
-  const exportFullCsv = () => {
+  const exportFullCsv = async () => {
     if (!parsedRows || parsedRows.length === 0) return;
     setIsProcessing(true);
     setStatusText('جاري إنشاء ملف CSV شامل بدون سقف لعدد الصفوف...');
 
-    setTimeout(() => {
-      try {
-        const headers = Object.keys(parsedRows[0]).filter((k) => !k.startsWith('_'));
-        const lines: string[] = [];
+    try {
+      const headers = Object.keys(parsedRows[0]).filter((k) => !k.startsWith('_'));
+      const chunks: string[] = [];
+      chunks.push(headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','));
 
-        // Header
-        lines.push(headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(','));
+      for (let r = 0; r < totalRows; r++) {
+        const rowObj = parsedRows[r];
+        chunks.push(
+          headers
+            .map((h) => {
+              const val = String(rowObj[h] ?? '').replace(/"/g, '""');
+              return `"${val}"`;
+            })
+            .join(',')
+        );
 
-        // Rows
-        for (let r = 0; r < parsedRows.length; r++) {
-          const rowObj = parsedRows[r];
-          lines.push(
-            headers
-              .map((h) => {
-                const val = String(rowObj[h] ?? '').replace(/"/g, '""');
-                return `"${val}"`;
-              })
-              .join(',')
-          );
+        if (r > 0 && r % 25000 === 0) {
+          const pct = Math.round((r / totalRows) * 100);
+          setStatusText(`جاري تجهيز سطر CSV (${pct}% - ${r.toLocaleString('ar-EG')} من ${totalRows.toLocaleString('ar-EG')})...`);
+          await new Promise((res) => setTimeout(res, 0));
         }
-
-        const csvContent = '\uFEFF' + lines.join('\r\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        const baseName = selectedFile?.name.replace(/\.[^/.]+$/, '') || 'ملف_شامل';
-        link.download = `${baseName}_كامل_CSV.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(link.href);
-
-        setStatusText('✅ تم تصدير ملف CSV الشامل بنجاح!');
-      } catch (err: any) {
-        setErrorMessage('تعذر تصدير CSV: ' + err.message);
-      } finally {
-        setIsProcessing(false);
       }
-    }, 50);
+
+      setStatusText('جاري تحميل وتنزيل ملف CSV...');
+      await new Promise((r) => setTimeout(r, 20));
+
+      const csvContent = '\uFEFF' + chunks.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const baseName = selectedFile?.name.replace(/\.[^/.]+$/, '') || 'ملف_شامل';
+      link.download = `${baseName}_كامل_CSV.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+
+      setStatusText('✅ تم تصدير ملف CSV الشامل بنجاح!');
+    } catch (err: any) {
+      setErrorMessage('تعذر تصدير CSV: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // 3. Directly load all rows into App sheet
-  const handleApplyDirectly = () => {
+  const handleApplyDirectly = async () => {
     if (!parsedRows || parsedRows.length === 0) return;
+    setIsProcessing(true);
+    setStatusText('جاري اعتماد وقراءة السجلات في المنظومة فوراً...');
+    await new Promise((r) => setTimeout(r, 200));
     onApplyToSheet(parsedRows, selectedFile?.name || 'ملف_المليوني.xlsx', sheetType);
+    setStatusText('✅ تم اعتماد وقراءة الشيت بنجاح!');
+    await new Promise((r) => setTimeout(r, 500));
+    setIsProcessing(false);
     onClose();
   };
 

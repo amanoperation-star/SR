@@ -733,6 +733,33 @@ export default function App() {
     }
   };
 
+  // Helper to ensure Sheet 1 exists or auto-generate it from Payments/Cash if uploaded first
+  const ensureSheet1Exists = (currentData: SheetRow[], mCol: string) => {
+    if (sheet1.length > 0) return sheet1;
+    const machineMap = new Map<string, SheetRow>();
+    for (const r of currentData) {
+      const mVal = r[mCol];
+      if (mVal !== undefined && mVal !== null) {
+        const mStr = String(mVal).trim();
+        if (mStr && !machineMap.has(mStr)) {
+          machineMap.set(mStr, {
+            [colM1 || 'رقم الماكينة']: mStr,
+            _tabType: mStr.startsWith('7-') || mStr.startsWith('٧-') ? 'cash' : 'payments'
+          });
+        }
+      }
+    }
+    const autoS1 = Array.from(machineMap.values());
+    if (autoS1.length > 0) {
+      setSheet1(autoS1);
+      setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
+      const cash = autoS1.filter(r => r._tabType === 'cash').length;
+      setSheet1Counts({ total: autoS1.length, cash, payments: autoS1.length - cash });
+      return autoS1;
+    }
+    return sheet1;
+  };
+
   // Handle Sheet 1 upload
   const handleSheet1Upload = async (file: File) => {
     setIsSheet1Loading(true);
@@ -885,9 +912,16 @@ export default function App() {
 
       showToast(`✅ تم رفع شيت المدفوعات بنجاح: ${data.length.toLocaleString('ar-EG')} سجل من ملف «${file.name}»`);
 
-      if (sheet1.length > 0) {
-        await runReconciliation(sheet1, data, sheet3, true);
-      }
+      const effectiveS1 = ensureSheet1Exists(data, activeM2);
+
+      // Auto-dismiss progress modal cleanly
+      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
+      await new Promise((r) => setTimeout(r, 250));
+      setProgressState((p) => ({ ...p, isOpen: false }));
+
+      showToast(`✅ تم رفع شيت المدفوعات بنجاح: ${data.length.toLocaleString('ar-EG')} سجل من ملف «${file.name}»`);
+
+      await runReconciliation(effectiveS1, data, sheet3, true);
     } catch (err: any) {
       console.error(err);
       setIsSheet2Loading(false);
@@ -966,9 +1000,16 @@ export default function App() {
 
       showToast(`✅ تم رفع شيت أجهزة الكاش بنجاح: ${data.length.toLocaleString('ar-EG')} جهاز من ملف «${file.name}»`);
 
-      if (sheet1.length > 0) {
-        await runReconciliation(sheet1, sheet2, data, true);
-      }
+      const effectiveS1 = ensureSheet1Exists(data, activeM3);
+
+      // Auto-dismiss progress modal cleanly
+      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
+      await new Promise((r) => setTimeout(r, 250));
+      setProgressState((p) => ({ ...p, isOpen: false }));
+
+      showToast(`✅ تم رفع شيت أجهزة الكاش بنجاح: ${data.length.toLocaleString('ar-EG')} جهاز من ملف «${file.name}»`);
+
+      await runReconciliation(effectiveS1, sheet2, data, true);
     } catch (err: any) {
       console.error(err);
       setIsSheet3Loading(false);
@@ -2478,6 +2519,20 @@ export default function App() {
 
               {sheet2.length > 0 && (
                 <div className="mt-5 space-y-4 border-t border-slate-200 dark:border-slate-800/80 pt-5">
+                  {/* Record Count Summary Card */}
+                  <div className="p-4 bg-slate-900/90 border border-blue-500/40 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">
+                        💳
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-400 block">إجمالي سجلات المدفوعات المرفوعة</span>
+                        <span className="text-[11px] text-slate-500 font-semibold">{sheet2FileName || 'ملف المدفوعات'}</span>
+                      </div>
+                    </div>
+                    <span className="text-2xl font-mono font-black text-blue-400">{sheet2.length.toLocaleString('ar-EG')}</span>
+                  </div>
+
                   <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -2656,6 +2711,20 @@ export default function App() {
 
               {sheet3.length > 0 && (
                 <div className="mt-6 p-4 rounded-2xl bg-[#080d16]/60 border border-slate-850 space-y-4">
+                  {/* Record Count Summary Card */}
+                  <div className="p-4 bg-slate-900/90 border border-emerald-500/40 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg">
+                        💵
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-slate-400 block">إجمالي أجهزة وسجلات الكاش المرفوعة</span>
+                        <span className="text-[11px] text-slate-500 font-semibold">{sheet3FileName || 'ملف الكاش'}</span>
+                      </div>
+                    </div>
+                    <span className="text-2xl font-mono font-black text-emerald-400">{sheet3.length.toLocaleString('ar-EG')}</span>
+                  </div>
+
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-xl text-emerald-600 dark:text-emerald-400 text-xs font-bold">
                     <span>تم قراءة شيت الكاش بنجاح: {sheet3.length.toLocaleString('ar-EG')} سجل كاش</span>
                     <div className="flex items-center gap-2">

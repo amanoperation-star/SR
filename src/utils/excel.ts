@@ -91,7 +91,7 @@ export async function parseExcelFile(
         const totalRows = lines.length - (headerRowIdx + 1);
 
         for (let i = headerRowIdx + 1; i < lines.length; i++) {
-          if (i % 12000 === 0) {
+          if (i % 60000 === 0) {
             const pct = Math.min(96, 20 + Math.round(((i - headerRowIdx) / (totalRows || 1)) * 76));
             onProgress?.(pct, `استخراج ومعالجة السجلات (${(i - headerRowIdx).toLocaleString('ar-EG')} من ${totalRows.toLocaleString('ar-EG')})...`);
             await new Promise((r) => setTimeout(r, 0));
@@ -215,7 +215,7 @@ export async function parseExcelFile(
     const totalDataRows = aoa.length - (headerRowIdx + 1);
 
     for (let r = headerRowIdx + 1; r < aoa.length; r++) {
-      if (r > 0 && r % 12000 === 0) {
+      if (r > 0 && r % 60000 === 0) {
         const currentPct = Math.min(96, 65 + Math.round(((r - headerRowIdx) / (totalDataRows || 1)) * 30));
         onProgress?.(currentPct, `تحميل وتجهيز البيانات (${(r - headerRowIdx).toLocaleString('ar-EG')} من ${totalDataRows.toLocaleString('ar-EG')})...`);
         await new Promise((resolve) => setTimeout(resolve, 0));
