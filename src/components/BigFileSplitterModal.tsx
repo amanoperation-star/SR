@@ -11,10 +11,15 @@ import {
   ArrowRight,
   Database,
   Info,
+  HelpCircle,
+  FileArchive,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SheetRow } from '../types';
 import { parseExcelFile } from '../utils/excel';
+import { isZipFile, inspectZipFile, extractFileFromZip, ZipFileInfo } from '../utils/zip';
+import { ZipFilePickerModal } from './ZipFilePickerModal';
+import { CompressionTipsModal } from './CompressionTipsModal';
 
 interface BigFileSplitterModalProps {
   isOpen: boolean;
@@ -37,6 +42,12 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
   const [chunkSize, setChunkSize] = useState<number>(850000); // 850k per sheet safe below Excel's 1,048,576
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // ZIP and Compression Guidance States
+  const [showZipPicker, setShowZipPicker] = useState(false);
+  const [pendingZipFile, setPendingZipFile] = useState<File | null>(null);
+  const [zipFiles, setZipFiles] = useState<ZipFileInfo[]>([]);
+  const [showCompressionTips, setShowCompressionTips] = useState(false);
+
   // Sync default when opening
   React.useEffect(() => {
     if (isOpen) {
@@ -51,13 +62,51 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
   if (!isOpen) return null;
 
   const handleFileSelect = async (file: File) => {
+    setErrorMessage(null);
+
+    // 1. Check if the file is a ZIP archive
+    if (isZipFile(file)) {
+      setIsProcessing(true);
+      setStatusText('جاري فحص محتويات الأرشيف المضغوط (ZIP)...');
+      try {
+        const items = await inspectZipFile(file);
+        const supported = items.filter((f) => f.isSupportedSheet);
+
+        if (supported.length === 0) {
+          setErrorMessage('لم يتم العثور على أي ملفات جداول CSV أو Excel صالحة داخل هذا الأرشيف المضغوط.');
+          setIsProcessing(false);
+          return;
+        }
+
+        // If multiple spreadsheet files exist, let the user pick
+        if (supported.length > 1) {
+          setPendingZipFile(file);
+          setZipFiles(items);
+          setShowZipPicker(true);
+          setIsProcessing(false);
+          return;
+        }
+
+        // If exactly 1 file, extract it and continue
+        setStatusText(`جاري استخراج (${supported[0].name}) من الأرشيف...`);
+        const extracted = await extractFileFromZip(file, supported[0].path);
+        file = extracted;
+      } catch (err: any) {
+        console.error(err);
+        setErrorMessage(err.message || 'تعذر قراءة أو فك ضغط ملف ZIP.');
+        setIsProcessing(false);
+        return;
+      }
+    }
+
     setSelectedFile(file);
     setIsProcessing(true);
     setStatusText('جاري تحميل ومعالجة الملف بسرعة فائقة...');
-    setErrorMessage(null);
 
     try {
-      const rows = await parseExcelFile(file, sheetType);
+      const rows = await parseExcelFile(file, sheetType, (pct, text) => {
+        setStatusText(`${text || 'جاري استخراج السجلات...'} (${pct}%)`);
+      });
       if (!rows || rows.length === 0) {
         setErrorMessage('الملف فارغ أو تعذر استخراج أي سجلات صالحة منه.');
         setIsProcessing(false);
@@ -65,7 +114,7 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
       }
       setParsedRows(rows);
       setIsProcessing(false);
-      setStatusText(`تم قراءة ${rows.length.toLocaleString('ar-EG')} سجل بنجاح!`);
+      setStatusText(`✅ تم قراءة ${rows.length.toLocaleString('ar-EG')} سجل بنجاح!`);
     } catch (err: any) {
       console.error(err);
       setErrorMessage(err.message || 'حدث خطأ أثناء معالجة الملف الضخم.');
@@ -173,16 +222,15 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
   };
 
   // 3. Directly load all rows into App sheet
-  const handleApplyDirectly = async () => {
+  const handleApplyDirectly = () => {
     if (!parsedRows || parsedRows.length === 0) return;
-    setIsProcessing(true);
-    setStatusText('جاري اعتماد وقراءة السجلات في المنظومة فوراً...');
-    await new Promise((r) => setTimeout(r, 200));
-    onApplyToSheet(parsedRows, selectedFile?.name || 'ملف_المليوني.xlsx', sheetType);
-    setStatusText('✅ تم اعتماد وقراءة الشيت بنجاح!');
-    await new Promise((r) => setTimeout(r, 500));
-    setIsProcessing(false);
+    const rows = parsedRows;
+    const name = selectedFile?.name || 'ملف_المليوني.xlsx';
+    const targetType = sheetType;
     onClose();
+    setTimeout(() => {
+      onApplyToSheet(rows, name, targetType);
+    }, 50);
   };
 
   return (
@@ -219,10 +267,10 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
 
         {/* Body Content */}
         <div className="p-5 overflow-y-auto space-y-5">
-          {/* Target Sheet Switcher */}
-          <div className="flex items-center justify-between gap-3 p-3.5 bg-slate-900/60 border border-slate-800 rounded-2xl">
-            <span className="text-xs font-bold text-slate-300">تحديد الشيت المستهدف للمعالجة:</span>
+          {/* Target Sheet Switcher & Tips Button */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 bg-slate-900/60 border border-slate-800 rounded-2xl">
             <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-300">الشيت المستهدف:</span>
               <button
                 onClick={() => {
                   setSheetType('payments');
@@ -252,26 +300,35 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
                 💵 شيت الكاش
               </button>
             </div>
+
+            <button
+              onClick={() => setShowCompressionTips(true)}
+              type="button"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold transition cursor-pointer shrink-0"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>💡 نصائح تقليص الحجم والضغط</span>
+            </button>
           </div>
 
           {/* Technical Explanation Alert */}
           <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-slate-200 text-xs space-y-2">
             <div className="flex items-center gap-2 font-bold text-blue-400 text-sm">
               <Info className="w-4 h-4" />
-              <span>لماذا لا يعرض برنامج Microsoft Excel الملف كاملاً؟</span>
+              <span>معالجة فائقة للملفات المليونية ودعم الأرشيف المضغوط (ZIP)</span>
             </div>
             <p className="text-slate-300 leading-relaxed text-[11px] sm:text-xs">
-              برنامج مايكروسوفت إكسل لديه حد تقني صلب وهو <strong>1,048,576 صف فقط</strong> في ورقة العمل الواحدة (Sheet). عند فتح ملف ضخم يحتوي على أكثر من مليون صف، يقوم الإكسل بقص البيانات بعد الصف مليون و48 ألف، فتسقط باقي السجلات!
+              المنظومة تدعم الآن رفع <strong>ملفات الأرشيف المضغوطة (ZIP)</strong> وفكها فورياً داخل المتصفح لتخفيض حجم الملف بنسبة 85% وتسريع الرفع، مع تقسيم الملفات التي تتجاوز سقف إكسل (1,048,576 صف).
             </p>
           </div>
 
           {/* Upload Area if no file selected */}
           {!parsedRows && (
             <div className="space-y-4">
-              <label className="border-2 border-dashed border-slate-700 hover:border-amber-500 rounded-3xl p-8 sm:p-10 text-center cursor-pointer bg-slate-900/40 block transition-all">
+              <label className="border-2 border-dashed border-slate-700 hover:border-amber-500 rounded-3xl p-8 sm:p-10 text-center cursor-pointer bg-slate-900/40 block transition-all group">
                 <input
                   type="file"
-                  accept=".xlsx, .xls, .csv, .txt"
+                  accept=".xlsx, .xls, .csv, .txt, .zip, application/zip, application/x-zip-compressed"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
@@ -279,12 +336,15 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
                     }
                   }}
                 />
-                <Database className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+                <div className="flex items-center justify-center gap-2 mb-3">
+                  <Database className="w-10 h-10 text-amber-500 group-hover:scale-110 transition-transform" />
+                  <FileArchive className="w-8 h-8 text-amber-400/80" />
+                </div>
                 <h4 className="text-sm font-bold text-white mb-1">
-                  اختر ملف {sheetType === 'payments' ? 'المدفوعات' : 'الكاش'} الضخم (Excel أو CSV أو TXT)
+                  اختر ملف {sheetType === 'payments' ? 'المدفوعات' : 'الكاش'} (Excel أو CSV أو ملف مضغوط ZIP)
                 </h4>
                 <p className="text-xs text-slate-400">
-                  يدعم الملفات الكبيرة جداً مع معالجة سريعة وآمنة في الذاكرة
+                  يدعم رفع ملفات ZIP وفكها فورياً في المتصفح مع معالجة غير مجمدة للـ UI
                 </p>
               </label>
 
@@ -440,6 +500,30 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Zip File Picker Modal if archive has multiple sheets */}
+      <ZipFilePickerModal
+        isOpen={showZipPicker}
+        zipFile={pendingZipFile}
+        files={zipFiles}
+        targetSheetLabel={sheetType === 'payments' ? 'شيت المدفوعات' : 'شيت الكاش'}
+        onSelectFile={(extracted) => {
+          setShowZipPicker(false);
+          setPendingZipFile(null);
+          handleFileSelect(extracted);
+        }}
+        onClose={() => {
+          setShowZipPicker(false);
+          setPendingZipFile(null);
+          setIsProcessing(false);
+        }}
+      />
+
+      {/* Compression Tips Guidance Modal */}
+      <CompressionTipsModal
+        isOpen={showCompressionTips}
+        onClose={() => setShowCompressionTips(false)}
+      />
     </div>
   );
 };

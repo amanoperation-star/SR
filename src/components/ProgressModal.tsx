@@ -9,6 +9,8 @@ interface ProgressModalProps {
   subtitle: string;
   percent: number;
   statusText: string;
+  uploadedSheetType?: 'sheet1' | 'sheet2' | 'sheet3';
+  onNavigateToSheet?: (sheetType: 'sheet1' | 'sheet2' | 'sheet3') => void;
 }
 
 export const ProgressModal: React.FC<ProgressModalProps> = ({
@@ -20,22 +22,21 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
   subtitle,
   percent,
   statusText,
+  uploadedSheetType,
+  onNavigateToSheet,
 }) => {
   const onCloseRef = React.useRef(onClose);
   const onConfirmRef = React.useRef(onConfirm);
   onCloseRef.current = onClose;
   onConfirmRef.current = onConfirm;
 
-  // Automatically trigger completion and dismiss when progress reaches 100%
+  // Auto-dismiss safely after 8 seconds when completed if untouched, or instant on user click
   React.useEffect(() => {
     if (isOpen && percent >= 100) {
       const timer = setTimeout(() => {
-        if (onCloseRef.current) {
-          onCloseRef.current();
-        } else if (onConfirmRef.current) {
-          onConfirmRef.current();
-        }
-      }, 400);
+        onCloseRef.current?.();
+        onConfirmRef.current?.();
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [isOpen, percent]);
@@ -57,7 +58,7 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
   // Calculate dynamic estimated remaining seconds based on the percentage
   let remainingText = '';
   if (percent >= 100) {
-    remainingText = 'اكتمل بنجاح';
+    remainingText = 'اكتمل بنجاح 100%';
   } else if (percent <= 0) {
     remainingText = 'جاري البدء...';
   } else {
@@ -331,34 +332,44 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
               </div>
             </div>
 
-            {(onClose || onConfirm) && (
-              <button 
-                type="button"
-                className={percent >= 100 ? "btn-success" : "btn-cancel"} 
-                onClick={() => {
-                  if (percent >= 100) {
-                    if (onConfirm) {
-                      onConfirm();
-                    } else if (onClose) {
-                      onClose();
-                    }
-                  } else if (onClose) {
-                    onClose();
-                  }
-                }}
-              >
-                {percent >= 100 ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span>موافق (إتمام)</span>
-                  </>
-                ) : (
-                  <span>إلغاء العملية</span>
-                )}
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {(onClose || onConfirm) && (
+                <button 
+                  type="button"
+                  className={percent >= 100 ? "btn-success" : "btn-cancel"} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseRef.current?.();
+                    onConfirmRef.current?.();
+                  }}
+                >
+                  {percent >= 100 ? (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>موافق (إتمام)</span>
+                    </>
+                  ) : (
+                    <span>إلغاء العملية</span>
+                  )}
+                </button>
+              )}
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseRef.current?.();
+                    onConfirmRef.current?.();
+                  }}
+                  className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer text-sm"
+                  title="إغلاق النافذة"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
           <p className="description">
@@ -377,10 +388,71 @@ export const ProgressModal: React.FC<ProgressModalProps> = ({
               />
             </div>
             <div className="footer-stats">
-              <span>الحالة: {percent >= 100 ? 'مكتمل' : 'قيد التنفيذ'}</span>
+              <span className={percent >= 100 ? "text-emerald-400 font-bold flex items-center gap-1" : ""}>
+                {percent >= 100 && <span>✓</span>}
+                الحالة: {percent >= 100 ? 'مكتمل بنجاح 100%' : 'قيد التنفيذ'}
+              </span>
               <span>المتبقي: {remainingText}</span>
             </div>
           </div>
+
+          {/* Explicit completion banner with actions */}
+          {percent >= 100 && (
+            <div className="mt-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black text-base shrink-0">
+                  ✓
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-emerald-300">
+                    {uploadedSheetType === 'sheet2'
+                      ? 'تم اعتماد شيت المدفوعات ورفعه بنجاح!'
+                      : uploadedSheetType === 'sheet3'
+                      ? 'تم اعتماد شيت الكاش ورفعه بنجاح!'
+                      : 'تم اكتمال عملية الرفع والاعتماد بنجاح!'}
+                  </h4>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    البيانات متوفرة الآن في المنظومة. يمكنك الانتقال للشيت للاطلاع عليها أو إغلاق النافذة.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                {onNavigateToSheet && uploadedSheetType && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCloseRef.current?.();
+                      onConfirmRef.current?.();
+                      onNavigateToSheet(uploadedSheetType);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 active:scale-95"
+                  >
+                    <span>
+                      {uploadedSheetType === 'sheet2'
+                        ? 'الذهاب لشيت المدفوعات'
+                        : uploadedSheetType === 'sheet3'
+                        ? 'الذهاب لشيت الكاش'
+                        : 'الانتقال للشيت'}
+                    </span>
+                    <span>←</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseRef.current?.();
+                    onConfirmRef.current?.();
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 border border-slate-700"
+                >
+                  إغلاق ومتابعة
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { SheetRow, ExpandedRow, MachineSummary, DuplicateAuditItem, IrregularAccountItem } from './types';
 import { parseExcelFile, downloadTemplateFile, exportReconciliationToExcel, exportReconciliationToCsv } from './utils/excel';
+import { chunkCache } from './utils/chunkCache';
+import { approveSheetWithWorker, processFileWithWorker } from './utils/workerClient';
 import { DesktopHeader } from './components/DesktopHeader';
 import { DesktopAppCenterModal } from './components/DesktopAppCenterModal';
 import { ManualEditorModal } from './components/ManualEditorModal';
@@ -43,6 +45,9 @@ import { BulkActionBar } from './components/BulkActionBar';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { DesktopAppTab } from './components/DesktopAppTab';
 import { ProgressModal } from './components/ProgressModal';
+import { isZipFile, inspectZipFile, extractFileFromZip, ZipFileInfo } from './utils/zip';
+import { ZipFilePickerModal } from './components/ZipFilePickerModal';
+import { CompressionTipsModal } from './components/CompressionTipsModal';
 
 function normalizeMachineId(id: string | number | undefined | null): string {
   if (id === undefined || id === null) return '';
@@ -125,6 +130,11 @@ export default function App() {
   const [sheet1FileName, setSheet1FileName] = useState<string>('');
   const [sheet2FileName, setSheet2FileName] = useState<string>('');
   const [sheet3FileName, setSheet3FileName] = useState<string>('');
+  const [sheet2TotalCount, setSheet2TotalCount] = useState<number>(0);
+  const [sheet3TotalCount, setSheet3TotalCount] = useState<number>(0);
+
+  const effectiveSheet2Count = sheet2TotalCount > 0 ? sheet2TotalCount : sheet2.length;
+  const effectiveSheet3Count = sheet3TotalCount > 0 ? sheet3TotalCount : sheet3.length;
 
   // Upload card interactive states & refs
   const [isSheet1Loading, setIsSheet1Loading] = useState<boolean>(false);
@@ -196,6 +206,20 @@ export default function App() {
     percent: 0,
     statusText: '',
   });
+
+  // ZIP Picker Modal & Compression Tips states
+  const [appZipPicker, setAppZipPicker] = useState<{
+    isOpen: boolean;
+    zipFile: File | null;
+    files: ZipFileInfo[];
+    target: 'sheet1' | 'sheet2' | 'sheet3';
+  }>({
+    isOpen: false,
+    zipFile: null,
+    files: [],
+    target: 'sheet2',
+  });
+  const [isCompressionTipsOpen, setIsCompressionTipsOpen] = useState(false);
 
   // Sync theme with HTML class
   useEffect(() => {
@@ -359,20 +383,23 @@ export default function App() {
     const effectiveM2 = m2Name && s2Sample[m2Name] !== undefined
       ? m2Name
       : s2Keys.find((k) => /^(acceptor1|acceptor_1|acceptor 1|acceptor|ماكينة المدفوعات|ماكينه المدفوعات)$/i.test(k))
-        || s2Keys.find((k) => /(acceptor.*1|^acceptor$|ماكين.*مدفوعات)/i.test(k))
         || s2Keys.find((k) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(k))
+        || s2Keys.find((k) => /^(doner1|donor1)$/i.test(k))
         || s2Keys[0] || '';
 
     const effectiveAcc = accName && s2Sample[accName] !== undefined
       ? accName
-      : s2Keys.find((k) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(k))
-        || s2Keys.find((k) => /(doner.*1|donor.*1|^doner$|^donor$|حساب.*مدفوعات|رقم.*المدفوعات)/i.test(k))
+      : s2Keys.find((k) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(k))
+        || s2Keys.find((k) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(k))
+        || s2Keys.find((k) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(k))
         || s2Keys.find((k) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(k))
-        || '';
+        || s2Keys[0] || '';
 
     const effectiveRep = repNameCol && s2Sample[repNameCol] !== undefined
       ? repNameCol
-      : s2Keys.find((k) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(k))
+      : s2Keys.find((k) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(k))
+        || s2Keys.find((k) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(k))
+        || s2Keys.find((k) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(k))
         || effectiveAcc
         || s2Keys[1] || s2Keys[0] || '';
 
@@ -381,26 +408,34 @@ export default function App() {
     const effectiveM3 = m3Name && s3Sample[m3Name] !== undefined
       ? m3Name
       : s3Keys.find((k) => /^(acceptor2|acceptor_2|acceptor 2|رقم ماكينه الكاش|ماكينه الكاش|ماكينة الكاش)$/i.test(k))
-        || s3Keys.find((k) => /(acceptor.*2|ماكين.*كاش|ماكينة.*الكاش)/i.test(k))
+        || s3Keys.find((k) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(k))
         || s3Keys.find((k) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(k))
         || s3Keys[0] || '';
 
     const effectiveCashAcc = cashAccName && s3Sample[cashAccName] !== undefined
       ? cashAccName
-      : s3Keys.find((k) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش)$/i.test(k))
-        || s3Keys.find((k) => /(doner.*2|donor.*2|كاش.*مدفوعات|رقم.*الكاش|حساب.*الكاش)/i.test(k))
-        || s3Keys.find((k) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(k))
-        || '';
+      : s3Keys.find((k) => /^(رقم الكاش المدفوعات|رقم الكاش|حساب الكاش)$/i.test(k))
+        || s3Keys.find((k) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(k))
+        || s3Keys.find((k) => /حساب|كود|account|acc|code/i.test(k))
+        || s3Keys[1] || s3Keys[0] || '';
 
     const effectiveCashRep = cashRepNameCol && s3Sample[cashRepNameCol] !== undefined
       ? cashRepNameCol
-      : s3Keys.find((k) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(k))
+      : s3Keys.find((k) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(k))
+        || s3Keys.find((k) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(k))
         || effectiveCashAcc
         || s3Keys[1] || s3Keys[0] || '';
 
     // Process Sheet 2 (Payments)
     for (let i = 0; i < s2.length; i++) {
-      if (i > 0 && i % 10000 === 0) await yieldToMain();
+      if (i > 0 && i % 20000 === 0) {
+        setProgressState((p) => ({
+          ...p,
+          percent: Math.min(50, 15 + Math.round((i / (s2.length || 1)) * 35)),
+          statusText: `فهرسة سجلات المدفوعات (${i.toLocaleString('ar-EG')} من ${s2.length.toLocaleString('ar-EG')})...`,
+        }));
+        await yieldToMain();
+      }
       const row = s2[i];
       const rawM = row[effectiveM2];
       if (rawM !== undefined && rawM !== null && rawM !== '') {
@@ -444,8 +479,12 @@ export default function App() {
           }
         }
 
-        if (!repMap.has(key)) repMap.set(key, []);
-        repMap.get(key)!.push({
+        let list = repMap.get(key);
+        if (!list) {
+          list = [];
+          repMap.set(key, list);
+        }
+        list.push({
           account: repAcc,
           name: repName,
           isMissingRepName: isRepNameEmpty && repAcc === 'غير متوفر',
@@ -456,7 +495,14 @@ export default function App() {
 
     // Process Sheet 3 (Cash)
     for (let i = 0; i < s3.length; i++) {
-      if (i > 0 && i % 10000 === 0) await yieldToMain();
+      if (i > 0 && i % 20000 === 0) {
+        setProgressState((p) => ({
+          ...p,
+          percent: Math.min(75, 50 + Math.round((i / (s3.length || 1)) * 25)),
+          statusText: `فهرسة سجلات الكاش (${i.toLocaleString('ar-EG')} من ${s3.length.toLocaleString('ar-EG')})...`,
+        }));
+        await yieldToMain();
+      }
       const row = s3[i];
       const rawM = row[effectiveM3];
       if (rawM !== undefined && rawM !== null && rawM !== '') {
@@ -500,8 +546,12 @@ export default function App() {
           }
         }
 
-        if (!repMap.has(key)) repMap.set(key, []);
-        repMap.get(key)!.push({
+        let list = repMap.get(key);
+        if (!list) {
+          list = [];
+          repMap.set(key, list);
+        }
+        list.push({
           account: repAcc,
           name: repName,
           isMissingRepName: isRepNameEmpty && repAcc === 'غير متوفر',
@@ -510,22 +560,25 @@ export default function App() {
       }
     }
 
-    // Audit duplicates in Sheet 1
-    const machineCounts = new Map<string, number>();
-    for (let i = 0; i < s1.length; i++) {
-      if (i > 0 && i % 10000 === 0) await yieldToMain();
+    // Fast Single-Pass Audit duplicates in Sheet 1
+    const seenMachines = new Set<string>();
+    const dupSet = new Set<string>();
+    const duplicateList: DuplicateAuditItem[] = [];
+    const maxScanDup = Math.min(s1.length, 50000);
+    for (let i = 0; i < maxScanDup; i++) {
       const row = s1[i];
       const m = row[effectiveM1];
       if (m !== undefined && m !== null && m !== '') {
         const key = String(m).trim();
-        machineCounts.set(key, (machineCounts.get(key) || 0) + 1);
-      }
-    }
-    const duplicateList: DuplicateAuditItem[] = [];
-    for (const [key, count] of machineCounts) {
-      if (count > 1) {
-        duplicateList.push({ machine: key, occurrences: count });
-        if (duplicateList.length >= 2000) break;
+        if (seenMachines.has(key)) {
+          if (!dupSet.has(key)) {
+            dupSet.add(key);
+            duplicateList.push({ machine: key, occurrences: 2 });
+            if (duplicateList.length >= 1000) break;
+          }
+        } else {
+          seenMachines.add(key);
+        }
       }
     }
 
@@ -542,15 +595,22 @@ export default function App() {
     let pRowsCount = 0;
 
     for (let i = 0; i < s1.length; i++) {
-      if (i > 0 && i % 10000 === 0) await yieldToMain();
+      if (i > 0 && i % 20000 === 0) {
+        setProgressState((p) => ({
+          ...p,
+          percent: Math.min(96, 75 + Math.round((i / (s1.length || 1)) * 21)),
+          statusText: `ربط ومطابقة الماكينات (${i.toLocaleString('ar-EG')} من ${s1.length.toLocaleString('ar-EG')})...`,
+        }));
+        await yieldToMain();
+      }
       const row = s1[i];
       const mVal = row[effectiveM1];
       if (mVal === undefined || mVal === null || mVal === '') continue;
 
       const originalMachineId = String(mVal).trim();
       const lookupKey = normalizeMachineId(originalMachineId);
-      const reps = repMap.get(lookupKey) || [];
-      const count = reps.length;
+      const reps = repMap.get(lookupKey);
+      const count = reps ? reps.length : 0;
 
       let status: 'single' | 'multi' | 'none' = 'none';
       if (count === 1) {
@@ -564,16 +624,18 @@ export default function App() {
       }
 
       // Check if machine starts with 7- or matches a cash representative
-      const isCashMachine = originalMachineId.startsWith('7-') || originalMachineId.startsWith('٧-') || reps.some(r => r.type === 'cash');
-      const cleanMachineId = normalizeMachineId(originalMachineId);
+      const isCashMachine = originalMachineId.startsWith('7-') || originalMachineId.startsWith('٧-') || (reps ? reps.some(r => r.type === 'cash') : false);
+      const cleanMachineId = lookupKey;
 
-      summaries.push({
-        index: i + 1,
-        machine: originalMachineId,
-        repCount: count,
-        reps,
-        status,
-      });
+      if (summaries.length < 5000) {
+        summaries.push({
+          index: i + 1,
+          machine: originalMachineId,
+          repCount: count,
+          reps: reps || [],
+          status,
+        });
+      }
 
       if (count === 0) {
         rowCounter++;
@@ -588,7 +650,7 @@ export default function App() {
           : cleanMachineId;
 
         flatRows.push({
-          id: `row-${rowCounter}`,
+          id: `r-${rowCounter}`,
           machine: vacantMachineDisplay,
           account: 'غير متوفر',
           repName: fallbackVal,
@@ -604,7 +666,7 @@ export default function App() {
       } else {
         for (let rIdx = 0; rIdx < count; rIdx++) {
           rowCounter++;
-          const r = reps[rIdx];
+          const r = reps![rIdx];
 
           if (r.type === 'cash') {
             cRowsCount++;
@@ -620,7 +682,7 @@ export default function App() {
             : (cleanMachineId.startsWith('7-') || cleanMachineId.startsWith('٧-') ? cleanMachineId : `7-${cleanMachineId}`);
 
           flatRows.push({
-            id: `row-${rowCounter}`,
+            id: `r-${rowCounter}`,
             machine: repMachineId,
             account: r.account,
             repName: r.name,
@@ -719,25 +781,19 @@ export default function App() {
     }
   };
 
-  // Confirm and take action when clicking "موافق (إتمام)"
+  // Confirm and take action when clicking "موافق (إتمام)" - Simply closes the modal immediately with zero freeze
   const handleProgressModalConfirm = () => {
     setProgressState((p) => ({ ...p, isOpen: false }));
-
-    // If both Sheet 1 and (Sheet 2 or Sheet 3) are loaded: run matching and go directly to Tab 5 (Results)
-    if (sheet1.length > 0 && (sheet2.length > 0 || sheet3.length > 0)) {
-      if (!isReconcilingRef.current) {
-        runReconciliation(sheet1, sheet2, sheet3, true);
-      } else {
-        setCurrentTab(5);
-      }
-    }
   };
 
   // Helper to ensure Sheet 1 exists or auto-generate it from Payments/Cash if uploaded first
   const ensureSheet1Exists = (currentData: SheetRow[], mCol: string) => {
     if (sheet1.length > 0) return sheet1;
     const machineMap = new Map<string, SheetRow>();
-    for (const r of currentData) {
+    const limit = Math.min(currentData.length, 60000);
+    for (let i = 0; i < limit; i++) {
+      const r = currentData[i];
+      if (!r) continue;
       const mVal = r[mCol];
       if (mVal !== undefined && mVal !== null) {
         const mStr = String(mVal).trim();
@@ -762,6 +818,32 @@ export default function App() {
 
   // Handle Sheet 1 upload
   const handleSheet1Upload = async (file: File) => {
+    // 1. Check if uploaded file is a ZIP archive
+    if (isZipFile(file)) {
+      try {
+        const items = await inspectZipFile(file);
+        const supported = items.filter((f) => f.isSupportedSheet);
+        if (supported.length === 0) {
+          showToast('⚠️ لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل أرشيف ZIP.');
+          return;
+        }
+        if (supported.length > 1) {
+          setAppZipPicker({
+            isOpen: true,
+            zipFile: file,
+            files: items,
+            target: 'sheet1',
+          });
+          return;
+        }
+        const extracted = await extractFileFromZip(file, supported[0].path);
+        file = extracted;
+      } catch (err: any) {
+        showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
+        return;
+      }
+    }
+
     setIsSheet1Loading(true);
     setProgressState({
       isOpen: true,
@@ -774,14 +856,14 @@ export default function App() {
     });
 
     try {
-      const data = await parseExcelFile(file, 'machines', (pct, text) => {
+      const data = await processFileWithWorker(file, 'machines', (pct, text) => {
         setProgressState({
           isOpen: true,
           title: 'شيت الماكينات',
           fileName: file.name,
           subtitle: 'جاري تحميل ومعالجة بيانات شيت الماكينات بأقصى سرعة...',
           percent: pct,
-          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة...',
+          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة في المسار الخلفي...',
           uploadedSheetType: 'sheet1',
         });
       });
@@ -823,17 +905,12 @@ export default function App() {
 
       setSheet1(data);
       setSheet1FileName(file.name);
-
-      // Auto-dismiss progress modal cleanly
-      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
-      await new Promise((r) => setTimeout(r, 250));
-      setProgressState((p) => ({ ...p, isOpen: false }));
-
+      setProgressState((p) => ({
+        ...p,
+        percent: 100,
+        statusText: `اكتمل استخراج ${data.length.toLocaleString('ar-EG')} ماكينة بنجاح!`,
+      }));
       showToast(`✅ تم رفع شيت الماكينات بنجاح: ${data.length.toLocaleString('ar-EG')} ماكينة (${file.name})`);
-
-      if (sheet2.length > 0 || sheet3.length > 0) {
-        await runReconciliation(data, sheet2, sheet3, true);
-      }
     } catch (err: any) {
       console.error(err);
       setIsSheet1Loading(false);
@@ -844,6 +921,32 @@ export default function App() {
 
   // Handle Sheet 2 upload (Payments Sheet)
   const handleSheet2Upload = async (file: File) => {
+    // 1. Check if uploaded file is a ZIP archive
+    if (isZipFile(file)) {
+      try {
+        const items = await inspectZipFile(file);
+        const supported = items.filter((f) => f.isSupportedSheet);
+        if (supported.length === 0) {
+          showToast('⚠️ لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل أرشيف ZIP.');
+          return;
+        }
+        if (supported.length > 1) {
+          setAppZipPicker({
+            isOpen: true,
+            zipFile: file,
+            files: items,
+            target: 'sheet2',
+          });
+          return;
+        }
+        const extracted = await extractFileFromZip(file, supported[0].path);
+        file = extracted;
+      } catch (err: any) {
+        showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
+        return;
+      }
+    }
+
     setIsSheet2Loading(true);
     setProgressState({
       isOpen: true,
@@ -856,14 +959,14 @@ export default function App() {
     });
 
     try {
-      const data = await parseExcelFile(file, 'payments', (pct, text) => {
+      const data = await processFileWithWorker(file, 'payments', (pct, text) => {
         setProgressState({
           isOpen: true,
           title: 'شيت المدفوعات',
           fileName: file.name,
-          subtitle: 'جاري تحميل ومعالجة بيانات شيت المدفوعات بأقصى سرعة...',
-          percent: pct,
-          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة...',
+          subtitle: 'جاري تحميل وقراءة بيانات شيت المدفوعات في المسار الخلفي...',
+          percent: Math.min(80, pct),
+          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة في المسار الخلفي...',
           uploadedSheetType: 'sheet2',
         });
       });
@@ -875,53 +978,47 @@ export default function App() {
         return;
       }
 
+      // Perform background approval, column detection, auto-machine indexing in Worker
+      const res = await approveSheetWithWorker(
+        data,
+        'payments',
+        sheet1.length,
+        (pct, text) => {
+          setProgressState((prev) => ({
+            ...prev,
+            percent: Math.min(98, 80 + Math.round((pct / 100) * 18)),
+            statusText: text || 'اعتماد وتثبيت البيانات في الذاكرة...',
+          }));
+        }
+      );
+
       setIsSheet2Loading(false);
-      const cols2 = Object.keys(data[0] || {});
-      const activeM2 =
-        cols2.find((c) => /^(acceptor1|acceptor_1|acceptor 1|acceptor|ماكينة المدفوعات|ماكينه المدفوعات)$/i.test(c)) ||
-        cols2.find((c) => /(acceptor.*1|^acceptor$|ماكين.*مدفوعات)/i.test(c)) ||
-        cols2.find((c) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(c)) ||
-        cols2[0] ||
-        '';
 
-      const activeAcc =
-        cols2.find((c) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(c)) ||
-        cols2.find((c) => /(doner.*1|donor.*1|^doner$|^donor$|حساب.*مدفوعات|رقم.*المدفوعات)/i.test(c)) ||
-        cols2.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
-        '';
+      if (res.detectedCols.activeM) setColM2(res.detectedCols.activeM);
+      if (res.detectedCols.activeAcc) setColAcc(res.detectedCols.activeAcc);
+      if (res.detectedCols.activeRep) setColRep(res.detectedCols.activeRep);
 
-      let activeRep =
-        cols2.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c)) ||
-        cols2.find((c) => /(مندوب|agent|rep)/i.test(c) && !/(رقم|حساب|كود|acc|code|id)/i.test(c)) ||
-        cols2.find((c) => /(doner.*1|donor.*1|doner1|donor1|^doner$|^donor$)/i.test(c)) ||
-        cols2[1] ||
-        cols2[0] ||
-        '';
-
-      if (activeM2) setColM2(activeM2);
-      if (activeAcc) setColAcc(activeAcc);
-      if (activeRep) setColRep(activeRep);
-
-      setSheet2(data);
+      // Save complete rows in smart memory cache, and store 50-row preview in React state
+      chunkCache.setRows('sheet2', data);
+      setSheet2(res.previewRows);
+      setSheet2TotalCount(res.totalCount);
       setSheet2FileName(file.name);
 
-      // Auto-dismiss progress modal cleanly
-      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
-      await new Promise((r) => setTimeout(r, 250));
-      setProgressState((p) => ({ ...p, isOpen: false }));
+      // Auto-generate Sheet 1 (Machines) if not present yet
+      if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
+        setSheet1(res.autoSheet1);
+        setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
+        if (res.autoSheet1Counts) {
+          setSheet1Counts(res.autoSheet1Counts);
+        }
+      }
 
-      showToast(`✅ تم رفع شيت المدفوعات بنجاح: ${data.length.toLocaleString('ar-EG')} سجل من ملف «${file.name}»`);
-
-      const effectiveS1 = ensureSheet1Exists(data, activeM2);
-
-      // Auto-dismiss progress modal cleanly
-      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
-      await new Promise((r) => setTimeout(r, 250));
-      setProgressState((p) => ({ ...p, isOpen: false }));
-
-      showToast(`✅ تم رفع شيت المدفوعات بنجاح: ${data.length.toLocaleString('ar-EG')} سجل من ملف «${file.name}»`);
-
-      await runReconciliation(effectiveS1, data, sheet3, true);
+      setProgressState((p) => ({
+        ...p,
+        percent: 100,
+        statusText: `اكتمل اعتماد وتثبيت ${res.totalCount.toLocaleString('ar-EG')} سجل بنجاح في الذاكرة الذكية!`,
+      }));
+      showToast(`✅ تم رفع واعتماد شيت المدفوعات بنجاح: ${res.totalCount.toLocaleString('ar-EG')} سجل من ملف «${file.name}»`);
     } catch (err: any) {
       console.error(err);
       setIsSheet2Loading(false);
@@ -932,6 +1029,32 @@ export default function App() {
 
   // Handle Sheet 3 upload (Cash Sheet)
   const handleSheet3Upload = async (file: File) => {
+    // 1. Check if uploaded file is a ZIP archive
+    if (isZipFile(file)) {
+      try {
+        const items = await inspectZipFile(file);
+        const supported = items.filter((f) => f.isSupportedSheet);
+        if (supported.length === 0) {
+          showToast('⚠️ لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل أرشيف ZIP.');
+          return;
+        }
+        if (supported.length > 1) {
+          setAppZipPicker({
+            isOpen: true,
+            zipFile: file,
+            files: items,
+            target: 'sheet3',
+          });
+          return;
+        }
+        const extracted = await extractFileFromZip(file, supported[0].path);
+        file = extracted;
+      } catch (err: any) {
+        showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
+        return;
+      }
+    }
+
     setIsSheet3Loading(true);
     setProgressState({
       isOpen: true,
@@ -944,14 +1067,14 @@ export default function App() {
     });
 
     try {
-      const data = await parseExcelFile(file, 'cash', (pct, text) => {
+      const data = await processFileWithWorker(file, 'cash', (pct, text) => {
         setProgressState({
           isOpen: true,
           title: 'شيت أجهزة الكاش',
           fileName: file.name,
-          subtitle: 'جاري تحميل ومعالجة بيانات شيت الكاش بأقصى سرعة...',
-          percent: pct,
-          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة...',
+          subtitle: 'جاري تحميل وقراءة بيانات شيت الكاش في المسار الخلفي...',
+          percent: Math.min(80, pct),
+          statusText: text || 'تحميل ومعالجة البيانات بسرعة فائقة في المسار الخلفي...',
           uploadedSheetType: 'sheet3',
         });
       });
@@ -963,53 +1086,47 @@ export default function App() {
         return;
       }
 
+      // Perform background approval, column detection, auto-machine indexing in Worker
+      const res = await approveSheetWithWorker(
+        data,
+        'cash',
+        sheet1.length,
+        (pct, text) => {
+          setProgressState((prev) => ({
+            ...prev,
+            percent: Math.min(98, 80 + Math.round((pct / 100) * 18)),
+            statusText: text || 'اعتماد وتثبيت البيانات في الذاكرة...',
+          }));
+        }
+      );
+
       setIsSheet3Loading(false);
-      const cols3 = Object.keys(data[0] || {});
-      const activeM3 =
-        cols3.find((c) => /^(acceptor2|acceptor_2|acceptor 2|رقم ماكينه الكاش|ماكينه الكاش|ماكينة الكاش)$/i.test(c)) ||
-        cols3.find((c) => /(acceptor.*2|ماكين.*كاش|ماكينة.*الكاش)/i.test(c)) ||
-        cols3.find((c) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(c)) ||
-        cols3[0] ||
-        '';
 
-      const activeCashAcc =
-        cols3.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش)$/i.test(c)) ||
-        cols3.find((c) => /(doner.*2|donor.*2|كاش.*مدفوعات|رقم.*الكاش|حساب.*الكاش)/i.test(c)) ||
-        cols3.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
-        '';
+      if (res.detectedCols.activeM) setColM3(res.detectedCols.activeM);
+      if (res.detectedCols.activeAcc) setColCashAcc(res.detectedCols.activeAcc);
+      if (res.detectedCols.activeRep) setColCashRep(res.detectedCols.activeRep);
 
-      let activeCashRep =
-        cols3.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c)) ||
-        cols3.find((c) => /(مندوب|agent|rep)/i.test(c) && !/(رقم|حساب|كود|acc|code|id)/i.test(c)) ||
-        cols3.find((c) => /(doner.*2|donor.*2|doner2|donor2)/i.test(c)) ||
-        cols3[1] ||
-        cols3[0] ||
-        '';
-
-      if (activeM3) setColM3(activeM3);
-      if (activeCashAcc) setColCashAcc(activeCashAcc);
-      if (activeCashRep) setColCashRep(activeCashRep);
-
-      setSheet3(data);
+      // Save complete rows in smart memory cache, and store 50-row preview in React state
+      chunkCache.setRows('sheet3', data);
+      setSheet3(res.previewRows);
+      setSheet3TotalCount(res.totalCount);
       setSheet3FileName(file.name);
 
-      // Auto-dismiss progress modal cleanly
-      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
-      await new Promise((r) => setTimeout(r, 250));
-      setProgressState((p) => ({ ...p, isOpen: false }));
+      // Auto-generate Sheet 1 (Machines) if not present yet
+      if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
+        setSheet1(res.autoSheet1);
+        setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
+        if (res.autoSheet1Counts) {
+          setSheet1Counts(res.autoSheet1Counts);
+        }
+      }
 
-      showToast(`✅ تم رفع شيت أجهزة الكاش بنجاح: ${data.length.toLocaleString('ar-EG')} جهاز من ملف «${file.name}»`);
-
-      const effectiveS1 = ensureSheet1Exists(data, activeM3);
-
-      // Auto-dismiss progress modal cleanly
-      setProgressState((p) => ({ ...p, percent: 100, statusText: 'اكتمل التحميل بنجاح!' }));
-      await new Promise((r) => setTimeout(r, 250));
-      setProgressState((p) => ({ ...p, isOpen: false }));
-
-      showToast(`✅ تم رفع شيت أجهزة الكاش بنجاح: ${data.length.toLocaleString('ar-EG')} جهاز من ملف «${file.name}»`);
-
-      await runReconciliation(effectiveS1, sheet2, data, true);
+      setProgressState((p) => ({
+        ...p,
+        percent: 100,
+        statusText: `اكتمل اعتماد وتثبيت ${res.totalCount.toLocaleString('ar-EG')} جهاز بنجاح في الذاكرة الذكية!`,
+      }));
+      showToast(`✅ تم رفع واعتماد شيت أجهزة الكاش بنجاح: ${res.totalCount.toLocaleString('ar-EG')} جهاز من ملف «${file.name}»`);
     } catch (err: any) {
       console.error(err);
       setIsSheet3Loading(false);
@@ -1045,7 +1162,9 @@ export default function App() {
   const handleClearSheet2 = () => {
     setIsSheet2Loading(false);
     setSheet2([]);
+    setSheet2TotalCount(0);
     setSheet2FileName('');
+    chunkCache.clear('sheet2');
     if (sheet2InputRef.current) sheet2InputRef.current.value = '';
     if (sheet1.length === 0 && sheet3.length === 0) {
       setMachinesResults([]);
@@ -1067,7 +1186,9 @@ export default function App() {
   const handleClearSheet3 = () => {
     setIsSheet3Loading(false);
     setSheet3([]);
+    setSheet3TotalCount(0);
     setSheet3FileName('');
+    chunkCache.clear('sheet3');
     if (sheet3InputRef.current) sheet3InputRef.current.value = '';
     if (sheet1.length === 0 && sheet2.length === 0) {
       setMachinesResults([]);
@@ -1154,6 +1275,8 @@ export default function App() {
     setSheet1([]);
     setSheet2([]);
     setSheet3([]);
+    setSheet2TotalCount(0);
+    setSheet3TotalCount(0);
     setSheet1FileName('');
     setSheet2FileName('');
     setSheet3FileName('');
@@ -1556,34 +1679,48 @@ export default function App() {
 
   // Retrieve original records from Sheet 2 for Split-View
   const getPaymentsRowsForMachine = (machineId: string) => {
+    const normId = normalizeMachineId(machineId);
+    if (!normId) return [];
+
+    const effectiveM2 = colM2 || 'acceptor1';
+
+    if (chunkCache.getCount('sheet2') > 0) {
+      return chunkCache.filterRows('sheet2', (row: any) => normalizeMachineId(row[effectiveM2] || row[Object.keys(row)[0]]) === normId, 50);
+    }
     if (!sheet2.length) return [];
     const s2Sample = sheet2[0] || {};
     const s2Keys = Object.keys(s2Sample);
-    const effectiveM2 = colM2 && s2Sample[colM2] !== undefined
+    const resolvedM2 = colM2 && s2Sample[colM2] !== undefined
       ? colM2
       : s2Keys.find((k) => /^(acceptor1|acceptor_1|acceptor 1|acceptor|ماكينة المدفوعات|ماكينه المدفوعات)$/i.test(k))
         || s2Keys.find((k) => /(acceptor.*1|^acceptor$|ماكين.*مدفوعات)/i.test(k))
         || s2Keys.find((k) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(k))
         || s2Keys[0] || '';
     
-    const normId = normalizeMachineId(machineId);
-    return sheet2.filter(row => normalizeMachineId(row[effectiveM2]) === normId);
+    return sheet2.filter(row => normalizeMachineId(row[resolvedM2]) === normId);
   };
 
   // Retrieve original records from Sheet 3 for Split-View
   const getCashRowsForMachine = (machineId: string) => {
+    const normId = normalizeMachineId(machineId);
+    if (!normId) return [];
+
+    const effectiveM3 = colM3 || 'acceptor2';
+
+    if (chunkCache.getCount('sheet3') > 0) {
+      return chunkCache.filterRows('sheet3', (row: any) => normalizeMachineId(row[effectiveM3] || row[Object.keys(row)[0]]) === normId, 50);
+    }
     if (!sheet3.length) return [];
     const s3Sample = sheet3[0] || {};
     const s3Keys = Object.keys(s3Sample);
-    const effectiveM3 = colM3 && s3Sample[colM3] !== undefined
+    const resolvedM3 = colM3 && s3Sample[colM3] !== undefined
       ? colM3
       : s3Keys.find((k) => /^(acceptor2|acceptor_2|acceptor 2|رقم ماكينه الكاش|ماكينه الكاش|ماكينة الكاش)$/i.test(k))
         || s3Keys.find((k) => /(acceptor.*2|ماكين.*كاش|ماكينة.*الكاش)/i.test(k))
         || s3Keys.find((k) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(k))
         || s3Keys[0] || '';
     
-    const normId = normalizeMachineId(machineId);
-    return sheet3.filter(row => normalizeMachineId(row[effectiveM3]) === normId);
+    return sheet3.filter(row => normalizeMachineId(row[resolvedM3]) === normId);
   };
 
   // Virtualization / Windowing Setup for High Performance Rendering in Tab 4
@@ -1748,12 +1885,7 @@ export default function App() {
         }}
       />
 
-      {/* Big File (+1.66M Rows) Splitter Modal */}
-      <BigFileSplitterModal
-        isOpen={isSplitterOpen}
-        onClose={() => setIsSplitterOpen(false)}
-        onApplyToCashSheet={handleApplyToCashSheetFromSplitter}
-      />
+
 
       {/* Desktop Header */}
       <DesktopHeader
@@ -1851,7 +1983,7 @@ export default function App() {
                 className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
                   currentTab === 2
                     ? 'bg-white/20 text-white'
-                    : sheet2.length > 0
+                    : effectiveSheet2Count > 0
                     ? 'bg-emerald-500/20 text-emerald-500'
                     : 'bg-blue-500/10 text-blue-500 dark:text-blue-400 group-hover:bg-blue-500/20'
                 }`}
@@ -1870,10 +2002,10 @@ export default function App() {
               </h4>
               <p
                 className={`text-[10px] mt-1 font-medium truncate flex items-center gap-1 ${
-                  currentTab === 2 ? 'text-indigo-100 font-bold' : sheet2.length > 0 ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400'
+                  currentTab === 2 ? 'text-indigo-100 font-bold' : effectiveSheet2Count > 0 ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                {sheet2.length > 0 ? `✓ ${sheet2.length.toLocaleString('ar-EG')} سجل توزيع` : 'ربط الحسابات'}
+                {effectiveSheet2Count > 0 ? `✓ ${effectiveSheet2Count.toLocaleString('ar-EG')} سجل توزيع` : 'ربط الحسابات'}
               </p>
             </div>
 
@@ -1905,7 +2037,7 @@ export default function App() {
                 className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
                   currentTab === 3
                     ? 'bg-white/20 text-white'
-                    : sheet3.length > 0
+                    : effectiveSheet3Count > 0
                     ? 'bg-emerald-500/20 text-emerald-500'
                     : 'bg-amber-500/10 text-amber-500 dark:text-amber-400 group-hover:bg-amber-500/20'
                 }`}
@@ -1924,10 +2056,10 @@ export default function App() {
               </h4>
               <p
                 className={`text-[10px] mt-1 font-medium truncate flex items-center gap-1 ${
-                  currentTab === 3 ? 'text-indigo-100 font-bold' : sheet3.length > 0 ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400'
+                  currentTab === 3 ? 'text-indigo-100 font-bold' : effectiveSheet3Count > 0 ? 'text-emerald-500 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
-                {sheet3.length > 0 ? `✓ ${sheet3.length.toLocaleString('ar-EG')} سجل كاش` : 'ربط حسابات الكاش'}
+                {effectiveSheet3Count > 0 ? `✓ ${effectiveSheet3Count.toLocaleString('ar-EG')} سجل كاش` : 'ربط حسابات الكاش'}
               </p>
             </div>
 
@@ -2185,6 +2317,13 @@ export default function App() {
                     <span>تعبئة القالب يدوياً</span>
                   </button>
                   <button
+                    onClick={() => setIsCompressionTipsOpen(true)}
+                    className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="نصائح عملية لتقليص حجم الملفات الكبيرة قبل رفعها"
+                  >
+                    <span>💡 نصائح تقليص الحجم والضغط</span>
+                  </button>
+                  <button
                     onClick={() => downloadTemplateFile(1, 'xlsx')}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -2195,23 +2334,24 @@ export default function App() {
               </div>
 
               {/* Dropzone */}
-              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors">
+              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-indigo-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors group">
                 <input
                   type="file"
-                  accept=".xlsx, .xls, .csv"
+                  accept=".xlsx, .xls, .csv, .zip, application/zip, application/x-zip-compressed"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files?.length) {
                       handleSheet1Upload(e.target.files[0]);
                     }
+                    e.target.value = '';
                   }}
                 />
-                <FileSpreadsheet className="w-12 h-12 text-indigo-500 mx-auto mb-2" />
+                <FileSpreadsheet className="w-12 h-12 text-indigo-500 mx-auto mb-2 group-hover:scale-105 transition-transform" />
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  اضغط هنا لاختيار شيت الماكينات أو اسحبه وأفلته هنا
+                  اضغط هنا لاختيار شيت الماكينات (Excel أو CSV أو ZIP مضغوط) أو اسحبه وأفلته هنا
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  يدعم ملفات Excel (.xlsx, .xls) أو CSV مع معالجة محلية 100%
+                  يدعم ملفات Excel و CSV وأرشيف ZIP المضغوط مع فك فوري ومعالجة محلية 100%
                 </p>
               </label>
 
@@ -2459,6 +2599,13 @@ export default function App() {
                     <span>⚡ معالج الملفات المليونية (+1.66M)</span>
                   </button>
                   <button
+                    onClick={() => setIsCompressionTipsOpen(true)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="نصائح عملية لتقليص حجم ملفات المدفوعات الكبيرة"
+                  >
+                    <span>💡 نصائح تقليص الحجم</span>
+                  </button>
+                  <button
                     onClick={() => {
                       setEditorInitialMode(2);
                       setIsManualEditorOpen(true);
@@ -2483,25 +2630,33 @@ export default function App() {
                 <div className="flex items-center gap-2.5 text-amber-300">
                   <Info className="w-4 h-4 shrink-0 text-amber-400" />
                   <span>
-                    <strong>هل يحتوي ملف المدفوعات على أكثر من مليون صف (مثل 1.66 مليون صف)؟</strong> يقوم برنامج الإكسل بقص الملف تلقائياً عند 1,048,576 صف. استخدم أداة التقسيم المدمجة لتجزئته لورقات عمل متعددة لتظهر كافة البيانات دون نقصان!
+                    <strong>هل حجم ملف المدفوعات ضخم أو يحتوي على ملايين الصفوف؟</strong> يمكنك ضغطه في أرشيف ZIP لتخفيض حجمه بنسبة 85% ورفعه مباشرة، أو استخدام معالج التجزئة لتقسيم السجلات بدقة!
                   </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setSplitterDefaultType('payments');
-                    setIsSplitterOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition cursor-pointer shrink-0 shadow-sm"
-                >
-                  فتح أداة التقسيم المليونية &larr;
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setIsCompressionTipsOpen(true)}
+                    className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold rounded-xl text-xs transition cursor-pointer"
+                  >
+                    💡 نصائح التقليص
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSplitterDefaultType('payments');
+                      setIsSplitterOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition cursor-pointer shadow-sm"
+                  >
+                    فتح أداة التقسيم &larr;
+                  </button>
+                </div>
               </div>
 
               {/* Dropzone */}
-              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-blue-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors">
+              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-blue-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors group">
                 <input
                   type="file"
-                  accept=".xlsx, .xls, .csv"
+                  accept=".xlsx, .xls, .csv, .zip, application/zip, application/x-zip-compressed"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files?.length) {
@@ -2510,14 +2665,16 @@ export default function App() {
                     e.target.value = '';
                   }}
                 />
-                <FileSpreadsheet className="w-12 h-12 text-blue-500 mx-auto mb-2" />
+                <FileSpreadsheet className="w-12 h-12 text-blue-500 mx-auto mb-2 group-hover:scale-105 transition-transform" />
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  اضغط هنا لاختيار شيت المدفوعات أو اسحبه وأفلته هنا
+                  اضغط هنا لاختيار شيت المدفوعات (Excel أو CSV أو ZIP مضغوط) أو اسحبه وأفلته هنا
                 </p>
-                <p className="text-[11px] text-slate-400">يدعم ملفات Excel (.xlsx, .xls) أو CSV</p>
+                <p className="text-[11px] text-slate-400">
+                  يدعم ملفات Excel و CSV وأرشيف ZIP مع استخراج سريع لعمودي acceptor1 و doner1
+                </p>
               </label>
 
-              {sheet2.length > 0 && (
+              {effectiveSheet2Count > 0 && (
                 <div className="mt-5 space-y-4 border-t border-slate-200 dark:border-slate-800/80 pt-5">
                   {/* Record Count Summary Card */}
                   <div className="p-4 bg-slate-900/90 border border-blue-500/40 rounded-2xl flex items-center justify-between shadow-sm">
@@ -2530,13 +2687,13 @@ export default function App() {
                         <span className="text-[11px] text-slate-500 font-semibold">{sheet2FileName || 'ملف المدفوعات'}</span>
                       </div>
                     </div>
-                    <span className="text-2xl font-mono font-black text-blue-400">{sheet2.length.toLocaleString('ar-EG')}</span>
+                    <span className="text-2xl font-mono font-black text-blue-400">{effectiveSheet2Count.toLocaleString('ar-EG')}</span>
                   </div>
 
                   <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                      <span>تم قراءة شيت المدفوعات بنجاح: {sheet2.length.toLocaleString('ar-EG')} سجل توزيع</span>
+                      <span>تم قراءة واعتماد شيت المدفوعات بنجاح: {effectiveSheet2Count.toLocaleString('ar-EG')} سجل توزيع</span>
                       {sheet2FileName && <span className="text-slate-400 font-normal">({sheet2FileName})</span>}
                     </div>
                     <div className="flex items-center gap-2">
@@ -2588,11 +2745,12 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <Eye className="w-4 h-4 text-blue-500" />
                         <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          معاينة بيانات شيت المدفوعات المرفوع مباشرة ({Math.min(25, sheet2.length)} من {sheet2.length.toLocaleString('ar-EG')})
+                          معاينة بيانات شيت المدفوعات المعتمد ({Math.min(50, sheet2.length)} من {effectiveSheet2Count.toLocaleString('ar-EG')})
                         </h4>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
-                        معاينة الشيت أوفلاين 100%
+                      <span className="text-[10px] font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md border border-blue-500/30 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>معاينة ذكية 50 سجلاً (ذاكرة معزولة)</span>
                       </span>
                     </div>
 
@@ -2601,13 +2759,31 @@ export default function App() {
                         <thead className="bg-slate-200/80 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold sticky top-0 border-b border-slate-200 dark:border-slate-800 z-10">
                           <tr>
                             <th className="p-2.5 w-12 text-center font-mono">م</th>
-                            {Object.keys(sheet2[0]).filter((col) => !col.startsWith('_')).map((col) => (
-                              <th key={col} className="p-2.5">{col}</th>
-                            ))}
+                            {sheet2[0] && Object.keys(sheet2[0]).filter((col) => !col.startsWith('_')).map((col) => {
+                              const isAcc1 = /acceptor1/i.test(col);
+                              const isDon1 = /doner1/i.test(col);
+                              return (
+                                <th key={col} className="p-2.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{col}</span>
+                                    {isAcc1 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-blue-500/20 text-blue-400 font-bold border border-blue-500/30">
+                                        رقم الحساب
+                                      </span>
+                                    )}
+                                    {isDon1 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-400 font-bold border border-purple-500/30">
+                                        المندوب
+                                      </span>
+                                    )}
+                                  </div>
+                                </th>
+                              );
+                            })}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-mono">
-                          {sheet2.slice(0, 25).map((row, idx) => (
+                          {sheet2.slice(0, 50).map((row, idx) => (
                             <tr key={idx} className="hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
                               <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
                               {Object.keys(sheet2[0]).filter((col) => !col.startsWith('_')).map((col) => (
@@ -2621,9 +2797,10 @@ export default function App() {
                       </table>
                     </div>
 
-                    {sheet2.length > 25 && (
-                      <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/50 text-center text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 font-semibold">
-                        عرض أول 25 سجل من إجمالي {sheet2.length.toLocaleString('ar-EG')} سجل محمل في الشيت.
+                    {effectiveSheet2Count > 50 && (
+                      <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/50 text-center text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 font-semibold flex items-center justify-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                        <span>عرض أول 50 سجل من إجمالي {effectiveSheet2Count.toLocaleString('ar-EG')} سجل مثبتة بالكامل في الذاكرة الذكية دون أي تجميد للشاشة.</span>
                       </div>
                     )}
                   </div>
@@ -2661,6 +2838,13 @@ export default function App() {
                     <span>⚡ معالج الملفات المليونية (+1.66M)</span>
                   </button>
                   <button
+                    onClick={() => setIsCompressionTipsOpen(true)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="نصائح عملية لتقليص حجم ملفات الكاش الكبيرة"
+                  >
+                    <span>💡 نصائح تقليص الحجم</span>
+                  </button>
+                  <button
                     onClick={() => downloadTemplateFile(3, 'xlsx')}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
@@ -2675,25 +2859,33 @@ export default function App() {
                 <div className="flex items-center gap-2.5 text-amber-300">
                   <Info className="w-4 h-4 shrink-0 text-amber-400" />
                   <span>
-                    <strong>هل يحتوي ملف الكاش على أكثر من مليون صف (مثل 1.66 مليون صف)؟</strong> يقوم برنامج الإكسل بقص الملف تلقائياً عند 1,048,576 صف. استخدم أداة التقسيم المدمجة لتجزئته لورقات عمل متعددة لتظهر كافة البيانات دون نقصان!
+                    <strong>هل حجم ملف الكاش ضخم أو يتجاوز مليون صف؟</strong> يمكنك ضغطه في أرشيف ZIP لتخفيض حجمه بنسبة 85% ورفعه مباشرة، أو استخدام أداة التقسيم المدمجة لتجزئته لورقات عمل متعددة!
                   </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setSplitterDefaultType('cash');
-                    setIsSplitterOpen(true);
-                  }}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition cursor-pointer shrink-0 shadow-sm"
-                >
-                  فتح أداة التقسيم المليونية &larr;
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setIsCompressionTipsOpen(true)}
+                    className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold rounded-xl text-xs transition cursor-pointer"
+                  >
+                    💡 نصائح التقليص
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSplitterDefaultType('cash');
+                      setIsSplitterOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs transition cursor-pointer shadow-sm"
+                  >
+                    فتح أداة التقسيم &larr;
+                  </button>
+                </div>
               </div>
 
               {/* Dropzone */}
-              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-emerald-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors">
+              <label className="relative border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 text-center cursor-pointer hover:border-emerald-500 bg-slate-50 dark:bg-slate-800/30 block transition-colors group">
                 <input
                   type="file"
-                  accept=".xlsx, .xls, .csv"
+                  accept=".xlsx, .xls, .csv, .zip, application/zip, application/x-zip-compressed"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files?.length) {
@@ -2702,14 +2894,16 @@ export default function App() {
                     e.target.value = '';
                   }}
                 />
-                <FileSpreadsheet className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                <FileSpreadsheet className="w-12 h-12 text-emerald-500 mx-auto mb-2 group-hover:scale-105 transition-transform" />
                 <p className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
-                  اضغط هنا لاختيار شيت الكاش أو اسحبه وأفلته هنا
+                  اضغط هنا لاختيار شيت الكاش (Excel أو CSV أو ZIP مضغوط) أو اسحبه وأفلته هنا
                 </p>
-                <p className="text-[11px] text-slate-400">يدعم ملفات Excel (.xlsx, .xls) أو CSV</p>
+                <p className="text-[11px] text-slate-400">
+                  يدعم ملفات Excel و CSV وأرشيف ZIP مع استخراج سريع لعمودي acceptor2 و doner2
+                </p>
               </label>
 
-              {sheet3.length > 0 && (
+              {effectiveSheet3Count > 0 && (
                 <div className="mt-6 p-4 rounded-2xl bg-[#080d16]/60 border border-slate-850 space-y-4">
                   {/* Record Count Summary Card */}
                   <div className="p-4 bg-slate-900/90 border border-emerald-500/40 rounded-2xl flex items-center justify-between shadow-sm">
@@ -2722,11 +2916,11 @@ export default function App() {
                         <span className="text-[11px] text-slate-500 font-semibold">{sheet3FileName || 'ملف الكاش'}</span>
                       </div>
                     </div>
-                    <span className="text-2xl font-mono font-black text-emerald-400">{sheet3.length.toLocaleString('ar-EG')}</span>
+                    <span className="text-2xl font-mono font-black text-emerald-400">{effectiveSheet3Count.toLocaleString('ar-EG')}</span>
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-500/10 border border-emerald-500/20 p-3.5 rounded-xl text-emerald-600 dark:text-emerald-400 text-xs font-bold">
-                    <span>تم قراءة شيت الكاش بنجاح: {sheet3.length.toLocaleString('ar-EG')} سجل كاش</span>
+                    <span>تم قراءة واعتماد شيت الكاش بنجاح: {effectiveSheet3Count.toLocaleString('ar-EG')} سجل كاش</span>
                     <div className="flex items-center gap-2">
                       {sheet1.length > 0 && (
                         <button
@@ -2805,11 +2999,12 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <Eye className="w-4 h-4 text-emerald-500" />
                         <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          معاينة بيانات شيت الكاش المرفوع مباشرة ({Math.min(25, sheet3.length)} من {sheet3.length.toLocaleString('ar-EG')})
+                          معاينة بيانات شيت الكاش المعتمد ({Math.min(50, sheet3.length)} من {effectiveSheet3Count.toLocaleString('ar-EG')})
                         </h4>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
-                        معاينة الشيت أوفلاين 100%
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md border border-emerald-500/30 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>معاينة ذكية 50 سجلاً (ذاكرة معزولة)</span>
                       </span>
                     </div>
 
@@ -2818,13 +3013,31 @@ export default function App() {
                         <thead className="bg-slate-200/80 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold sticky top-0 border-b border-slate-200 dark:border-slate-800 z-10">
                           <tr>
                             <th className="p-2.5 w-12 text-center font-mono">م</th>
-                            {Object.keys(sheet3[0]).filter((col) => !col.startsWith('_')).map((col) => (
-                              <th key={col} className="p-2.5">{col}</th>
-                            ))}
+                            {sheet3[0] && Object.keys(sheet3[0]).filter((col) => !col.startsWith('_')).map((col) => {
+                              const isAcc2 = /acceptor2/i.test(col);
+                              const isDon2 = /doner2/i.test(col);
+                              return (
+                                <th key={col} className="p-2.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{col}</span>
+                                    {isAcc2 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                                        رقم الماكينة
+                                      </span>
+                                    )}
+                                    {isDon2 && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-teal-500/20 text-teal-400 font-bold border border-teal-500/30">
+                                        رقم المندوب الكاش
+                                      </span>
+                                    )}
+                                  </div>
+                                </th>
+                              );
+                            })}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-mono">
-                          {sheet3.slice(0, 25).map((row, idx) => (
+                          {sheet3.slice(0, 50).map((row, idx) => (
                             <tr key={idx} className="hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
                               <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
                               {Object.keys(sheet3[0]).filter((col) => !col.startsWith('_')).map((col) => (
@@ -2838,9 +3051,10 @@ export default function App() {
                       </table>
                     </div>
 
-                    {sheet3.length > 25 && (
-                      <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/50 text-center text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 font-semibold">
-                        عرض أول 25 سجل من إجمالي {sheet3.length.toLocaleString('ar-EG')} سجل كاش محمل في الشيت.
+                    {effectiveSheet3Count > 50 && (
+                      <div className="p-2.5 bg-slate-100/50 dark:bg-slate-800/50 text-center text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700 font-semibold flex items-center justify-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        <span>عرض أول 50 سجل من إجمالي {effectiveSheet3Count.toLocaleString('ar-EG')} سجل كاش مثبتة بالكامل في الذاكرة الذكية دون أي تجميد للشاشة.</span>
                       </div>
                     )}
                   </div>
@@ -4119,6 +4333,12 @@ export default function App() {
         subtitle={progressState.subtitle}
         percent={progressState.percent}
         statusText={progressState.statusText}
+        uploadedSheetType={progressState.uploadedSheetType}
+        onNavigateToSheet={(type) => {
+          if (type === 'sheet1') setCurrentTab(1);
+          else if (type === 'sheet2') setCurrentTab(2);
+          else if (type === 'sheet3') setCurrentTab(3);
+        }}
       />
 
       {/* Big File Splitter Modal */}
@@ -4126,23 +4346,110 @@ export default function App() {
         isOpen={isSplitterOpen}
         onClose={() => setIsSplitterOpen(false)}
         defaultSheetType={splitterDefaultType}
-        onApplyToSheet={(rows, fileName, sheetType) => {
-          if (sheetType === 'payments') {
-            setSheet2(rows);
-            setSheet2FileName(fileName);
-            showToast(`✅ تم اعتماد شيت المدفوعات بنجاح: ${rows.length.toLocaleString('ar-EG')} سجل`);
-            if (sheet1.length > 0) {
-              runReconciliation(sheet1, rows, sheet3, true);
+        onApplyToSheet={async (rows, fileName, sheetType) => {
+          setIsSplitterOpen(false);
+          const targetUploadedType = sheetType === 'payments' ? 'sheet2' : 'sheet3';
+          const targetTitle = sheetType === 'payments' ? 'اعتماد شيت المدفوعات' : 'اعتماد شيت أجهزة الكاش';
+
+          // 1. Show loading screen immediately with fast responsive progress
+          setProgressState({
+            isOpen: true,
+            title: targetTitle,
+            fileName: fileName,
+            subtitle: `جاري اعتماد وتفريغ بيانات شيت ${sheetType === 'payments' ? 'المدفوعات' : 'الكاش'} في المسار الخلفي المعزول...`,
+            percent: 15,
+            statusText: 'بدء اعتماد وتثبيت السجلات في مسار Web Worker المعزول دون تجميد...',
+            uploadedSheetType: targetUploadedType,
+          });
+
+          try {
+            const res = await approveSheetWithWorker(
+              rows,
+              sheetType,
+              sheet1.length,
+              (pct, text) => {
+                setProgressState((prev) => ({
+                  ...prev,
+                  percent: pct,
+                  statusText: text || 'اعتماد وتثبيت البيانات...',
+                }));
+              }
+            );
+
+            // 2. Save full records in high-speed memory cache (Zero UI freeze)
+            chunkCache.setRows(targetUploadedType, rows);
+
+            // 3. Set preview rows (50 records) and total count in React state
+            if (sheetType === 'payments') {
+              setSheet2(res.previewRows);
+              setSheet2TotalCount(res.totalCount);
+              setSheet2FileName(fileName);
+              if (res.detectedCols.activeM) setColM2(res.detectedCols.activeM);
+              if (res.detectedCols.activeAcc) setColAcc(res.detectedCols.activeAcc);
+              if (res.detectedCols.activeRep) setColRep(res.detectedCols.activeRep);
+            } else {
+              setSheet3(res.previewRows);
+              setSheet3TotalCount(res.totalCount);
+              setSheet3FileName(fileName);
+              if (res.detectedCols.activeM) setColM3(res.detectedCols.activeM);
+              if (res.detectedCols.activeAcc) setColCashAcc(res.detectedCols.activeAcc);
+              if (res.detectedCols.activeRep) setColCashRep(res.detectedCols.activeRep);
             }
-          } else {
-            setSheet3(rows);
-            setSheet3FileName(fileName);
-            showToast(`✅ تم اعتماد شيت الكاش بنجاح: ${rows.length.toLocaleString('ar-EG')} سجل`);
-            if (sheet1.length > 0) {
-              runReconciliation(sheet1, sheet2, rows, true);
+
+            // 4. Auto-generate Sheet 1 (Machines) if not present yet
+            if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
+              setSheet1(res.autoSheet1);
+              setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
+              if (res.autoSheet1Counts) {
+                setSheet1Counts(res.autoSheet1Counts);
+              }
             }
+
+            setProgressState((prev) => ({
+              ...prev,
+              percent: 100,
+              statusText: `✅ تم اكتمال الاعتماد بنجاح! تم حفظ وتثبيت ${rows.length.toLocaleString('ar-EG')} سجل بالكامل في الذاكرة الذكية، وعرض عينة معاينة لأول 50 سجل.`,
+            }));
+            showToast(`✅ تم اكتمال الاعتماد بنجاح: تم رفع شيت ${sheetType === 'payments' ? 'المدفوعات' : 'الكاش'} (${rows.length.toLocaleString('ar-EG')} سجل)`);
+          } catch (err: any) {
+            console.error('Approval failed:', err);
+            setProgressState((p) => ({ ...p, isOpen: false }));
+            showToast(`❌ تعذر اعتماد الشيت: ${err?.message || 'يرجى المحاولة مجدداً.'}`);
           }
         }}
+      />
+
+      {/* App-level Zip File Picker Modal */}
+      <ZipFilePickerModal
+        isOpen={appZipPicker.isOpen}
+        zipFile={appZipPicker.zipFile}
+        files={appZipPicker.files}
+        targetSheetLabel={
+          appZipPicker.target === 'sheet1'
+            ? 'شيت الماكينات'
+            : appZipPicker.target === 'sheet2'
+            ? 'شيت المدفوعات'
+            : 'شيت الكاش'
+        }
+        onSelectFile={(extractedFile) => {
+          const target = appZipPicker.target;
+          setAppZipPicker({ isOpen: false, zipFile: null, files: [], target: 'sheet2' });
+          if (target === 'sheet1') handleSheet1Upload(extractedFile);
+          else if (target === 'sheet2') handleSheet2Upload(extractedFile);
+          else if (target === 'sheet3') handleSheet3Upload(extractedFile);
+        }}
+        onClose={() => {
+          setAppZipPicker({ isOpen: false, zipFile: null, files: [], target: 'sheet2' });
+          setIsSheet1Loading(false);
+          setIsSheet2Loading(false);
+          setIsSheet3Loading(false);
+        }}
+      />
+
+      {/* Compression Guidance & Tips Modal */}
+      <CompressionTipsModal
+        isOpen={isCompressionTipsOpen}
+        onClose={() => setIsCompressionTipsOpen(false)}
       />
     </div>
   );

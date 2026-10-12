@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
 import { ExpandedRow, SheetRow } from '../types';
+import { isZipFile, inspectZipFile, extractFileFromZip } from './zip';
+import { processFileWithWorker } from './workerClient';
 
 export async function filterRowsForTarget(
   rows: SheetRow[],
@@ -47,26 +49,105 @@ function parseCsvLineFast(line: string, delim = ','): string[] {
   return cols;
 }
 
+export function selectColumnsToKeep(
+  rawHeaders: string[],
+  targetType?: 'machines' | 'payments' | 'cash'
+): { indices: number[]; headers: string[] } {
+  if (!rawHeaders || rawHeaders.length === 0) {
+    return { indices: [], headers: [] };
+  }
+
+  const normalizedHeaders = rawHeaders.map((h) => h.replace(/^\uFEFF/, '').trim());
+
+  // Helper matching functions for target columns
+  const isAcceptor1 = (h: string) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(h);
+  const isDoner1 = (h: string) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(h);
+  const isAcceptor2 = (h: string) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(h);
+  const isDoner2 = (h: string) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(h);
+
+  // 1. Payments sheet: acceptor1 and doner1 only
+  if (targetType === 'payments') {
+    const keep: { idx: number; name: string }[] = [];
+    const acc1Idx = normalizedHeaders.findIndex(isAcceptor1);
+    const doner1Idx = normalizedHeaders.findIndex(isDoner1);
+    if (acc1Idx !== -1) keep.push({ idx: acc1Idx, name: normalizedHeaders[acc1Idx] });
+    if (doner1Idx !== -1 && doner1Idx !== acc1Idx) keep.push({ idx: doner1Idx, name: normalizedHeaders[doner1Idx] });
+    return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
+  }
+
+  // 2. Cash sheet: acceptor2 and doner2 only (with renaming)
+  if (targetType === 'cash') {
+    const keep: { idx: number; name: string }[] = [];
+    const acc2Idx = normalizedHeaders.findIndex(isAcceptor2);
+    const doner2Idx = normalizedHeaders.findIndex(isDoner2);
+    if (acc2Idx !== -1) keep.push({ idx: acc2Idx, name: normalizedHeaders[acc2Idx] });
+    if (doner2Idx !== -1 && doner2Idx !== acc2Idx) keep.push({ idx: doner2Idx, name: "رقم المندوب الكاش" });
+    return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
+  }
+
+  // 3. Machines sheet:
+  if (targetType === 'machines') {
+    const mIdx = normalizedHeaders.findIndex((h) => /^(ماكينة|رقم الماكينة|جهاز|pos|machine|sn|id)$/i.test(h));
+    const resolvedMIdx = mIdx !== -1 ? mIdx : normalizedHeaders.findIndex((h) => /ماكينة|جهاز|pos|machine|sn|id/i.test(h));
+    if (resolvedMIdx !== -1) {
+      return { indices: [resolvedMIdx], headers: [normalizedHeaders[resolvedMIdx]] };
+    }
+  }
+
+  // Default Fallback - return nothing to ensure strict filtering
+  return { indices: [], headers: [] };
+}
+
 export async function parseExcelFile(
   file: File,
   targetType?: 'machines' | 'payments' | 'cash',
   onProgress?: (percent: number, stepText: string) => void
 ): Promise<SheetRow[]> {
-  const isCsv = file.name.toLowerCase().endsWith('.csv');
-  onProgress?.(10, 'فتح وتحميل وقراءة الملف مباشرة...');
-  await new Promise((r) => setTimeout(r, 10));
+  try {
+    // 100% Non-blocking isolated Web Worker execution
+    return await processFileWithWorker(file, targetType, onProgress);
+  } catch (workerErr) {
+    console.warn('Web Worker execution fallback to local parsing:', workerErr);
+    return await parseExcelFileLocal(file, targetType, onProgress);
+  }
+}
 
-  // 1. Fast-path for CSV files
+export async function parseExcelFileLocal(
+  file: File,
+  targetType?: 'machines' | 'payments' | 'cash',
+  onProgress?: (percent: number, stepText: string) => void
+): Promise<SheetRow[]> {
+  // If the uploaded file is a ZIP archive, inspect and extract
+  if (isZipFile(file)) {
+    onProgress?.(5, 'فحص وقراءة محتويات الأرشيف المضغوط (ZIP)...');
+    const items = await inspectZipFile(file);
+    const supported = items.filter((f) => f.isSupportedSheet);
+    if (supported.length === 0) {
+      throw new Error('لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل هذا الأرشيف المضغوط.');
+    }
+    onProgress?.(10, `جاري استخراج الملف (${supported[0].name}) من الأرشيف المضغوط...`);
+    const extractedFile = await extractFileFromZip(file, supported[0].path);
+    return parseExcelFileLocal(extractedFile, targetType, onProgress);
+  }
+
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+  onProgress?.(5, 'فتح وتحميل وقراءة الملف...');
+  await new Promise((r) => setTimeout(r, 0));
+
+  // 1. Fast-path for CSV files with non-blocking streaming line processing
   if (isCsv) {
     try {
       const text = await file.text();
+      onProgress?.(15, 'تحليل أسطر وترويسات ملف CSV...');
+      await new Promise((r) => setTimeout(r, 0));
+
       const lines = text.split(/\r?\n/);
       if (lines.length > 0) {
         let headerRowIdx = -1;
         let headers: string[] = [];
         let delim = ',';
 
-        for (let i = 0; i < Math.min(lines.length, 12); i++) {
+        for (let i = 0; i < Math.min(lines.length, 15); i++) {
           const line = lines[i]?.trim();
           if (!line) continue;
           const detected = detectDelimiter(line);
@@ -86,14 +167,18 @@ export async function parseExcelFile(
           headers = parseCsvLineFast(fallbackLine, delim).map((c, colIdx) => c.trim() || `عمود_${colIdx + 1}`);
         }
 
+        // Apply strict column filtering to only keep required columns (doner1, doner2, acceptor1, acceptor2)
+        const { indices: keepIndices, headers: keepHeaders } = selectColumnsToKeep(headers, targetType);
+
         const rows: SheetRow[] = [];
-        const numHeaders = headers.length;
         const totalRows = lines.length - (headerRowIdx + 1);
+        const CSV_CHUNK_SIZE = 10000;
 
         for (let i = headerRowIdx + 1; i < lines.length; i++) {
-          if (i % 60000 === 0) {
-            const pct = Math.min(96, 20 + Math.round(((i - headerRowIdx) / (totalRows || 1)) * 76));
-            onProgress?.(pct, `استخراج ومعالجة السجلات (${(i - headerRowIdx).toLocaleString('ar-EG')} من ${totalRows.toLocaleString('ar-EG')})...`);
+          // Yield every 10,000 rows with setTimeout(0) to guarantee non-blocking UI
+          if (i > headerRowIdx && (i - headerRowIdx) % CSV_CHUNK_SIZE === 0) {
+            const pct = Math.min(95, 20 + Math.round(((i - headerRowIdx) / (totalRows || 1)) * 75));
+            onProgress?.(pct, `معالجة واستخراج السجلات المطلوبة (${(i - headerRowIdx).toLocaleString('ar-EG')} من ${totalRows.toLocaleString('ar-EG')})...`);
             await new Promise((r) => setTimeout(r, 0));
           }
 
@@ -104,12 +189,13 @@ export async function parseExcelFile(
           const rowObj: SheetRow = targetType ? { _tabType: targetType } : {};
           let hasData = false;
 
-          for (let c = 0; c < numHeaders; c++) {
+          for (let k = 0; k < keepIndices.length; k++) {
+            const c = keepIndices[k];
             const raw = cols[c];
             if (raw !== undefined && raw !== '') {
               const val = raw.trim();
               if (val !== '') {
-                rowObj[headers[c]] = val;
+                rowObj[keepHeaders[k]] = val;
                 hasData = true;
               }
             }
@@ -119,7 +205,7 @@ export async function parseExcelFile(
         }
 
         if (rows.length > 0) {
-          onProgress?.(100, 'اكتمل التحميل والمعالجة بنجاح!');
+          onProgress?.(100, `اكتمل استخراج ${rows.length.toLocaleString('ar-EG')} سجل بنجاح!`);
           await new Promise((r) => setTimeout(r, 10));
           return rows;
         }
@@ -130,12 +216,12 @@ export async function parseExcelFile(
   }
 
   // 2. High-speed XLSX reading
-  onProgress?.(25, 'قراءة الملف وتجهيز أوراق العمل...');
+  onProgress?.(20, 'قراءة محتوى الملف وفك الضغط...');
   await new Promise((r) => setTimeout(r, 10));
 
   const buffer = await file.arrayBuffer();
 
-  onProgress?.(45, 'فك ضغط أوراق العمل واستخراج البيانات...');
+  onProgress?.(45, 'تحليل هياكل وأوراق العمل...');
   await new Promise((r) => setTimeout(r, 10));
 
   let workbook: XLSX.WorkBook | null = null;
@@ -210,12 +296,16 @@ export async function parseExcelFile(
       return cleanH || `عمود_${colIdx + 1}`;
     });
 
+    // Apply strict column selection to preserve memory
+    const { indices: keepIndices, headers: keepHeaders } = selectColumnsToKeep(rawHeaders, defaultTabType as any);
+
     const result: SheetRow[] = [];
-    const numHeaders = rawHeaders.length;
     const totalDataRows = aoa.length - (headerRowIdx + 1);
 
+    const CHUNK_SIZE = 10000;
+
     for (let r = headerRowIdx + 1; r < aoa.length; r++) {
-      if (r > 0 && r % 60000 === 0) {
+      if ((r - headerRowIdx) % CHUNK_SIZE === 0) {
         const currentPct = Math.min(96, 65 + Math.round(((r - headerRowIdx) / (totalDataRows || 1)) * 30));
         onProgress?.(currentPct, `تحميل وتجهيز البيانات (${(r - headerRowIdx).toLocaleString('ar-EG')} من ${totalDataRows.toLocaleString('ar-EG')})...`);
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -226,12 +316,13 @@ export async function parseExcelFile(
       const rowObj: SheetRow = defaultTabType ? { _tabType: defaultTabType } : {};
       let hasData = false;
 
-      for (let c = 0; c < numHeaders; c++) {
+      for (let k = 0; k < keepIndices.length; k++) {
+        const c = keepIndices[k];
         const raw = row[c];
         if (raw !== undefined && raw !== null && raw !== '') {
-          const cellVal = String(raw).trim();
+          const cellVal = typeof raw === 'string' ? raw.trim() : String(raw).trim();
           if (cellVal !== '') {
-            rowObj[rawHeaders[c]] = cellVal;
+            rowObj[keepHeaders[k]] = cellVal;
             hasData = true;
           }
         }
