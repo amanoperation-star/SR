@@ -68,7 +68,13 @@ export const ManualEditorModal: React.FC<ManualEditorModalProps> = ({
         currentSheet1.forEach((r) => {
           const val = String(r['رقم الماكينة'] ?? Object.values(r)[0] ?? '');
           const area = String(r['الفرع / المنطقة'] ?? Object.values(r)[1] ?? '');
-          if (val.startsWith('7-') || val.startsWith('٧-')) {
+          const isCash =
+            r._tabType === 'cash' ||
+            val.startsWith('7-') ||
+            val.startsWith('٧-') ||
+            val.startsWith('7') ||
+            val.startsWith('٧');
+          if (isCash) {
             cash.push({ c1: val, c2: area });
           } else {
             pay.push({ c1: val, c2: area });

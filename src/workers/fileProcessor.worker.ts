@@ -2,11 +2,22 @@ import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 import { SheetRow } from '../types';
 
-// Helper matching functions for target columns (exact same rules confirmed by user)
-const isAcceptor1 = (h: string) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(h);
-const isDoner1 = (h: string) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(h);
-const isAcceptor2 = (h: string) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(h);
-const isDoner2 = (h: string) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(h);
+// Robust helper matching functions for target columns (handles Arabic & English variations)
+const isAcceptorMatch = (h: string) =>
+  /^(acceptor1|acceptor2|acceptor_1|acceptor_2|acceptor 1|acceptor 2|acceptor)$/i.test(h) ||
+  /^(رقم ماكينه الكاش|ماكينه الكاش|ماكينة الكاش|ماكينة المدفوعات|ماكينه المدفوعات|رقم الماكينة|رقم الماكينه|ماكينة|ماكينه|الجهاز|جهاز)$/i.test(h) ||
+  /(acceptor.*[12]|^acceptor$|ماكين.*كاش|ماكين.*مدفوعات)/i.test(h) ||
+  /^(pos|terminal|machine|sn|machine_id|terminal_id)$/i.test(h);
+
+const isDonerMatch = (h: string) =>
+  /^(doner1|doner2|donor1|donor2|doner_1|doner_2|donor_1|donor_2|doner 1|doner 2|donor 1|donor 2|doner|donor)$/i.test(h) ||
+  /^(رقم المندوب الكاش|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش|رقم حساب المدفوعات|حساب المدفوعات|رقم المندوب|كود المندوب|حساب المندوب|رقم الحساب|الحساب|كود|مندوب)$/i.test(h) ||
+  /(doner.*[12]|donor.*[12]|^doner$|^donor$|كاش.*مدفوعات|رقم.*الكاش|حساب.*الكاش|رقم.*مندوب|كود.*مندوب|حساب.*مدفوعات)/i.test(h) ||
+  /^(account|acc|rep_code|agent_code|rep_id|agent_id|wallet|code)$/i.test(h);
+
+const isRepNameMatch = (h: string) =>
+  /^(اسم المندوب|اسم العميل|اسم المستخدم|اسم المسؤول|اسم|مندوب|الاسم)$/i.test(h) ||
+  /(اسم.*مندوب|اسم.*عميل|اسم.*مستخدم|rep.*name|agent.*name|^name$)/i.test(h);
 
 function selectColumnsToKeep(
   rawHeaders: string[],
@@ -18,36 +29,82 @@ function selectColumnsToKeep(
 
   const normalizedHeaders = rawHeaders.map((h) => h.replace(/^\uFEFF/, '').trim());
 
-  // 1. Payments sheet: acceptor1 and doner1 only
+  // 1. Payments sheet: acceptor and doner / rep
   if (targetType === 'payments') {
     const keep: { idx: number; name: string }[] = [];
-    const acc1Idx = normalizedHeaders.findIndex(isAcceptor1);
-    const doner1Idx = normalizedHeaders.findIndex(isDoner1);
-    if (acc1Idx !== -1) keep.push({ idx: acc1Idx, name: normalizedHeaders[acc1Idx] });
-    if (doner1Idx !== -1 && doner1Idx !== acc1Idx) keep.push({ idx: doner1Idx, name: normalizedHeaders[doner1Idx] });
+    const accIdx = normalizedHeaders.findIndex((h) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(h)) !== -1
+      ? normalizedHeaders.findIndex((h) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(h))
+      : normalizedHeaders.findIndex(isAcceptorMatch);
+
+    const donerIdx = normalizedHeaders.findIndex((h) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(h)) !== -1
+      ? normalizedHeaders.findIndex((h) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(h))
+      : normalizedHeaders.findIndex((h, idx) => idx !== accIdx && isDonerMatch(h));
+
+    const nameIdx = normalizedHeaders.findIndex((h, idx) => idx !== accIdx && idx !== donerIdx && isRepNameMatch(h));
+
+    if (accIdx !== -1) keep.push({ idx: accIdx, name: normalizedHeaders[accIdx] });
+    if (donerIdx !== -1 && donerIdx !== accIdx) keep.push({ idx: donerIdx, name: normalizedHeaders[donerIdx] });
+    if (nameIdx !== -1) keep.push({ idx: nameIdx, name: normalizedHeaders[nameIdx] });
+
+    // SAFETY NET: If specific target columns weren't isolated, preserve ALL columns so data is never destroyed!
+    if (keep.length === 0) {
+      return {
+        indices: normalizedHeaders.map((_, i) => i),
+        headers: normalizedHeaders,
+      };
+    }
     return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
   }
 
-  // 2. Cash sheet: acceptor2 and doner2 only (with renaming to 'رقم المندوب الكاش')
+  // 2. Cash sheet: acceptor and doner / cash rep
   if (targetType === 'cash') {
     const keep: { idx: number; name: string }[] = [];
-    const acc2Idx = normalizedHeaders.findIndex(isAcceptor2);
-    const doner2Idx = normalizedHeaders.findIndex(isDoner2);
-    if (acc2Idx !== -1) keep.push({ idx: acc2Idx, name: normalizedHeaders[acc2Idx] });
-    if (doner2Idx !== -1 && doner2Idx !== acc2Idx) keep.push({ idx: doner2Idx, name: 'رقم المندوب الكاش' });
+    const accIdx = normalizedHeaders.findIndex((h) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(h)) !== -1
+      ? normalizedHeaders.findIndex((h) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(h))
+      : normalizedHeaders.findIndex(isAcceptorMatch);
+
+    const donerIdx = normalizedHeaders.findIndex((h) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم المندوب الكاش)$/i.test(h)) !== -1
+      ? normalizedHeaders.findIndex((h) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم المندوب الكاش)$/i.test(h))
+      : normalizedHeaders.findIndex((h, idx) => idx !== accIdx && isDonerMatch(h));
+
+    const nameIdx = normalizedHeaders.findIndex((h, idx) => idx !== accIdx && idx !== donerIdx && isRepNameMatch(h));
+
+    if (accIdx !== -1) keep.push({ idx: accIdx, name: normalizedHeaders[accIdx] });
+    if (donerIdx !== -1 && donerIdx !== accIdx) {
+      keep.push({ idx: donerIdx, name: 'رقم المندوب الكاش' });
+    }
+    if (nameIdx !== -1) keep.push({ idx: nameIdx, name: normalizedHeaders[nameIdx] });
+
+    // SAFETY NET: If specific target columns weren't isolated, preserve ALL columns!
+    if (keep.length === 0) {
+      return {
+        indices: normalizedHeaders.map((_, i) => i),
+        headers: normalizedHeaders,
+      };
+    }
     return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
   }
 
   // 3. Machines sheet:
   if (targetType === 'machines') {
     const mIdx = normalizedHeaders.findIndex((h) => /^(ماكينة|رقم الماكينة|جهاز|pos|machine|sn|id)$/i.test(h));
-    const resolvedMIdx = mIdx !== -1 ? mIdx : normalizedHeaders.findIndex((h) => /ماكينة|جهاز|pos|machine|sn|id/i.test(h));
+    const resolvedMIdx = mIdx !== -1 ? mIdx : normalizedHeaders.findIndex(isAcceptorMatch);
     if (resolvedMIdx !== -1) {
-      return { indices: [resolvedMIdx], headers: [normalizedHeaders[resolvedMIdx]] };
+      const keep: { idx: number; name: string }[] = [{ idx: resolvedMIdx, name: normalizedHeaders[resolvedMIdx] }];
+      normalizedHeaders.forEach((h, idx) => {
+        if (idx !== resolvedMIdx && /فرع|منطقة|محافظة|نوع|تبويب|تصنيف|قسم|حالة|branch|area|type|category/i.test(h)) {
+          keep.push({ idx, name: h });
+        }
+      });
+      return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
     }
   }
 
-  return { indices: [], headers: [] };
+  // Fallback: Return all headers to avoid dropping user data
+  return {
+    indices: normalizedHeaders.map((_, i) => i),
+    headers: normalizedHeaders,
+  };
 }
 
 function detectDelimiter(line: string): string {
@@ -134,37 +191,58 @@ async function handleParseFile(
   let activeBuffer = buffer;
   let activeName = fileName;
 
-  // 1. Check if the buffer is a ZIP archive
-  const isZip =
-    activeName.toLowerCase().endsWith('.zip') ||
-    (new Uint8Array(activeBuffer, 0, 4)[0] === 0x50 && new Uint8Array(activeBuffer, 0, 4)[1] === 0x4b);
+  // 1. Check if the buffer is an actual ZIP archive (must not be an Excel/CSV spreadsheet)
+  const lowerName = (activeName || '').toLowerCase().trim();
+  const isDirectSpreadsheet =
+    lowerName.endsWith('.xlsx') ||
+    lowerName.endsWith('.xls') ||
+    lowerName.endsWith('.csv') ||
+    lowerName.endsWith('.xlsm') ||
+    lowerName.endsWith('.xlsb') ||
+    lowerName.endsWith('.tsv') ||
+    lowerName.endsWith('.txt');
+
+  // ONLY treat as a ZIP archive if it explicitly ends with .zip/.zipx AND is NOT a direct spreadsheet
+  let isZip = !isDirectSpreadsheet && (lowerName.endsWith('.zip') || lowerName.endsWith('.zipx'));
 
   if (isZip) {
     sendProgress(id, 8, 'فك ضغط الأرشيف (ZIP) في المسار الخلفي المعزول...');
     const zip = await JSZip.loadAsync(activeBuffer);
-    const validEntries: { path: string; name: string }[] = [];
 
-    zip.forEach((relPath, entry) => {
-      if (entry.dir) return;
-      const parts = relPath.split('/');
-      const leaf = parts[parts.length - 1];
-      if (!leaf || leaf.startsWith('.') || relPath.includes('__MACOSX/')) return;
-      const ext = leaf.split('.').pop()?.toLowerCase();
-      if (['csv', 'xlsx', 'xls'].includes(ext || '')) {
-        validEntries.push({ path: relPath, name: leaf });
+    // If this archive contains xl/workbook.xml or [Content_Types].xml, it is an Excel XLSX workbook directly!
+    const isDirectXlsx = !!(zip.file('xl/workbook.xml') || zip.file('[Content_Types].xml'));
+
+    if (isDirectXlsx) {
+      // It is an Excel workbook, proceed directly to Excel reading
+      isZip = false;
+      if (!lowerName.endsWith('.xlsx')) {
+        activeName = activeName.replace(/\.zip$/i, '') + '.xlsx';
       }
-    });
+    } else {
+      const validEntries: { path: string; name: string }[] = [];
 
-    if (validEntries.length === 0) {
-      throw new Error('لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل أرشيف ZIP.');
+      zip.forEach((relPath, entry) => {
+        if (entry.dir) return;
+        const parts = relPath.split('/');
+        const leaf = parts[parts.length - 1];
+        if (!leaf || leaf.startsWith('.') || relPath.includes('__MACOSX/')) return;
+        const ext = leaf.split('.').pop()?.toLowerCase();
+        if (['csv', 'xlsx', 'xls', 'xlsm', 'xlsb', 'tsv', 'txt'].includes(ext || '')) {
+          validEntries.push({ path: relPath, name: leaf });
+        }
+      });
+
+      if (validEntries.length === 0) {
+        throw new Error('لم يتم العثور على أي ملفات جداول CSV أو Excel متوافقة داخل أرشيف ZIP.');
+      }
+
+      sendProgress(id, 15, `استخراج ملف (${validEntries[0].name}) من الأرشيف دون تجميد...`);
+      const zipEntry = zip.file(validEntries[0].path);
+      if (!zipEntry) throw new Error('تعذر قراءة محتوى الملف من الأرشيف.');
+
+      activeBuffer = await zipEntry.async('arraybuffer');
+      activeName = validEntries[0].name;
     }
-
-    sendProgress(id, 15, `استخراج ملف (${validEntries[0].name}) من الأرشيف دون تجميد...`);
-    const zipEntry = zip.file(validEntries[0].path);
-    if (!zipEntry) throw new Error('تعذر قراءة محتوى الملف من الأرشيف.');
-
-    activeBuffer = await zipEntry.async('arraybuffer');
-    activeName = validEntries[0].name;
   }
 
   const isCsv = activeName.toLowerCase().endsWith('.csv');
@@ -287,76 +365,115 @@ async function handleParseFile(
     return;
   }
 
-  sendProgress(id, 55, 'استخراج صفوف الجدول وتطبيق فلترة الأعمدة...');
-  const ws = workbook.Sheets[workbook.SheetNames[0]];
-  const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '', raw: true });
-
-  if (!aoa || aoa.length === 0) {
-    self.postMessage({ type: 'DONE', id, rows: [], fileName: activeName });
-    return;
-  }
-
-  let headerRowIdx = -1;
-  for (let r = 0; r < Math.min(aoa.length, 12); r++) {
-    const row = aoa[r];
-    if (!Array.isArray(row)) continue;
-    const nonEmptyCells = row.map((c) => String(c ?? '').trim()).filter((c) => c !== '');
-    if (nonEmptyCells.length >= 1) {
-      const hasKnown = nonEmptyCells.some((c) =>
-        /ماكينة|جهاز|pos|machine|sn|id|كود|حساب|مندوب|اسم|فرع|code|acc|name|acceptor|doner|donor/i.test(c)
-      );
-      if (hasKnown) {
-        headerRowIdx = r;
-        break;
-      }
-      if (headerRowIdx === -1 && nonEmptyCells.length >= 2) {
-        headerRowIdx = r;
-      }
-    }
-  }
-
-  if (headerRowIdx === -1) headerRowIdx = 0;
-
-  const rawHeaders = (aoa[headerRowIdx] || []).map((h, colIdx) => {
-    const cleanH = String(h ?? '').replace(/^\uFEFF/, '').trim();
-    return cleanH || `عمود_${colIdx + 1}`;
-  });
-
-  const { indices: keepIndices, headers: keepHeaders } = selectColumnsToKeep(rawHeaders, targetType);
+  sendProgress(id, 55, 'استخراج صفوف الجدول من كافة أوراق العمل (التبويبات)...');
   const resultRows: SheetRow[] = [];
-  const totalDataRows = aoa.length - (headerRowIdx + 1);
-  const CHUNK_SIZE = 10000;
+  const sheetNames = workbook.SheetNames || [];
+  const totalSheets = sheetNames.length;
 
-  for (let r = headerRowIdx + 1; r < aoa.length; r++) {
-    if ((r - headerRowIdx) % CHUNK_SIZE === 0) {
-      const currentPct = Math.min(96, 55 + Math.round(((r - headerRowIdx) / (totalDataRows || 1)) * 40));
-      sendProgress(
-        id,
-        currentPct,
-        `تجهيز البيانات في مسار الخلفية (${(r - headerRowIdx).toLocaleString('ar-EG')} من ${totalDataRows.toLocaleString('ar-EG')})...`
-      );
-      await new Promise((resolve) => setTimeout(resolve, 0));
+  // Track progress across sheets
+  for (let sIdx = 0; sIdx < totalSheets; sIdx++) {
+    const sName = sheetNames[sIdx];
+    const ws = workbook.Sheets[sName];
+    if (!ws || !ws['!ref']) continue;
+
+    const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '', raw: true });
+    if (!aoa || aoa.length === 0) continue;
+
+    // Detect if this specific sheet is Cash or Payments by worksheet name
+    const sNameLower = sName.toLowerCase().trim();
+    const isSheetCash = /كاش|cash/i.test(sNameLower);
+    const isSheetPay = /مدفوع|payment/i.test(sNameLower);
+
+    let defaultSheetTabType: 'cash' | 'payments' | undefined = undefined;
+    if (isSheetCash) {
+      defaultSheetTabType = 'cash';
+    } else if (isSheetPay) {
+      defaultSheetTabType = 'payments';
+    } else if (targetType === 'cash') {
+      defaultSheetTabType = 'cash';
+    } else if (targetType === 'payments') {
+      defaultSheetTabType = 'payments';
     }
 
-    const row = aoa[r];
-    if (!Array.isArray(row)) continue;
-    const rowObj: SheetRow = targetType ? { _tabType: targetType } : {};
-    let hasData = false;
-
-    for (let k = 0; k < keepIndices.length; k++) {
-      const c = keepIndices[k];
-      const raw = row[c];
-      if (raw !== undefined && raw !== null && raw !== '') {
-        const cellVal = typeof raw === 'string' ? raw.trim() : String(raw).trim();
-        if (cellVal !== '') {
-          rowObj[keepHeaders[k]] = cellVal;
-          hasData = true;
+    let headerRowIdx = -1;
+    for (let r = 0; r < Math.min(aoa.length, 12); r++) {
+      const row = aoa[r];
+      if (!Array.isArray(row)) continue;
+      const nonEmptyCells = row.map((c) => String(c ?? '').trim()).filter((c) => c !== '');
+      if (nonEmptyCells.length >= 1) {
+        const hasKnown = nonEmptyCells.some((c) =>
+          /ماكينة|جهاز|pos|machine|sn|id|كود|حساب|مندوب|اسم|فرع|code|acc|name|acceptor|doner|donor/i.test(c)
+        );
+        if (hasKnown) {
+          headerRowIdx = r;
+          break;
+        }
+        if (headerRowIdx === -1 && nonEmptyCells.length >= 2) {
+          headerRowIdx = r;
         }
       }
     }
 
-    if (hasData) {
-      resultRows.push(rowObj);
+    if (headerRowIdx === -1) headerRowIdx = 0;
+
+    const rawHeaders = (aoa[headerRowIdx] || []).map((h, colIdx) => {
+      const cleanH = String(h ?? '').replace(/^\uFEFF/, '').trim();
+      return cleanH || `عمود_${colIdx + 1}`;
+    });
+
+    const { indices: keepIndices, headers: keepHeaders } = selectColumnsToKeep(rawHeaders, targetType);
+    const totalDataRows = aoa.length - (headerRowIdx + 1);
+    const CHUNK_SIZE = 10000;
+
+    for (let r = headerRowIdx + 1; r < aoa.length; r++) {
+      if ((r - headerRowIdx) % CHUNK_SIZE === 0 && (r - headerRowIdx) > 0) {
+        const sheetPct = Math.round(((r - headerRowIdx) / (totalDataRows || 1)) * (35 / totalSheets));
+        const currentPct = Math.min(96, 55 + Math.round((sIdx / totalSheets) * 35) + sheetPct);
+        sendProgress(
+          id,
+          currentPct,
+          `استخراج البيانات من تبويبة «${sName}» (${(r - headerRowIdx).toLocaleString('ar-EG')} من ${totalDataRows.toLocaleString('ar-EG')})...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      const row = aoa[r];
+      if (!Array.isArray(row)) continue;
+      const rowObj: SheetRow = {};
+      let hasData = false;
+
+      for (let k = 0; k < keepIndices.length; k++) {
+        const c = keepIndices[k];
+        const raw = row[c];
+        if (raw !== undefined && raw !== null && raw !== '') {
+          const cellVal = typeof raw === 'string' ? raw.trim() : String(raw).trim();
+          if (cellVal !== '') {
+            rowObj[keepHeaders[k]] = cellVal;
+            hasData = true;
+          }
+        }
+      }
+
+      if (hasData) {
+        // Tag tab type
+        if (defaultSheetTabType) {
+          rowObj._tabType = defaultSheetTabType;
+        } else if (targetType === 'machines') {
+          // Check machine value or row content
+          const firstVal = String(Object.values(rowObj)[0] ?? '').trim();
+          if (firstVal.startsWith('7-') || firstVal.startsWith('٧-')) {
+            rowObj._tabType = 'cash';
+          } else {
+            // Check if any value mentions cash
+            const hasCashKeyword = Object.values(rowObj).some((v) => /كاش|cash/i.test(String(v)));
+            rowObj._tabType = hasCashKeyword ? 'cash' : 'payments';
+          }
+        } else if (targetType) {
+          rowObj._tabType = targetType;
+        }
+
+        resultRows.push(rowObj);
+      }
     }
   }
 
@@ -366,6 +483,26 @@ async function handleParseFile(
 
 async function handleInspectZip(id: string, buffer: ArrayBuffer) {
   const zip = await JSZip.loadAsync(buffer);
+
+  // If this archive contains xl/workbook.xml or [Content_Types].xml, it is an Excel XLSX workbook directly!
+  if (zip.file('xl/workbook.xml') || zip.file('[Content_Types].xml')) {
+    self.postMessage({
+      type: 'ZIP_INSPECTED',
+      id,
+      items: [
+        {
+          path: '__DIRECT_XLSX__',
+          name: 'sheet.xlsx',
+          size: buffer.byteLength,
+          date: new Date(),
+          extension: 'xlsx',
+          isSupportedSheet: true,
+        },
+      ],
+    });
+    return;
+  }
+
   const items: any[] = [];
 
   zip.forEach((relPath, entry) => {
@@ -376,7 +513,7 @@ async function handleInspectZip(id: string, buffer: ArrayBuffer) {
 
     const extMatch = leaf.match(/\.([^.]+)$/);
     const extension = extMatch ? extMatch[1].toLowerCase() : '';
-    const isSupportedSheet = ['csv', 'xlsx', 'xls'].includes(extension);
+    const isSupportedSheet = ['csv', 'xlsx', 'xls', 'xlsm', 'xlsb', 'tsv', 'txt'].includes(extension);
 
     const size = (entry as any)._data?.uncompressedSize || 0;
 
@@ -400,6 +537,16 @@ async function handleInspectZip(id: string, buffer: ArrayBuffer) {
 }
 
 async function handleExtractZipFile(id: string, buffer: ArrayBuffer, relativePath: string) {
+  if (relativePath === '__DIRECT_XLSX__') {
+    self.postMessage({
+      type: 'ZIP_EXTRACTED',
+      id,
+      buffer,
+      fileName: 'sheet.xlsx',
+    });
+    return;
+  }
+
   const zip = await JSZip.loadAsync(buffer);
   const entry = zip.file(relativePath);
   if (!entry) throw new Error(`الملف المطلوب (${relativePath}) غير موجود في الأرشيف.`);
@@ -446,44 +593,45 @@ async function handleApproveSheet(
   if (sheetType === 'payments') {
     activeM =
       cols.find((c) => /^(acceptor1|acceptor_1|acceptor 1|acceptor)$/i.test(c)) ||
-      cols.find((c) => /^(doner1|donor1|doner_1|donor_1)$/i.test(c)) ||
       cols.find((c) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(c)) ||
       cols[0] ||
       '';
     activeAcc =
-      cols.find((c) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(c)) ||
-      cols.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(c)) ||
       cols.find((c) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(c)) ||
-      cols.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
-      cols[0] ||
-      '';
-    activeRep =
-      cols.find((c) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1)$/i.test(c)) ||
       cols.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2)$/i.test(c)) ||
-      cols.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c)) ||
+      cols.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
+      cols.find((c) => c !== activeM) ||
       cols[1] ||
       cols[0] ||
       '';
+    if (activeAcc === activeM && cols.length > 1) {
+      activeAcc = cols.find((c) => c !== activeM) || activeAcc;
+    }
+    activeRep =
+      cols.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c)) ||
+      activeAcc;
   } else {
     activeM =
       cols.find((c) => /^(acceptor2|acceptor_2|acceptor 2|رقم ماكينه الكاش|ماكينه الكاش|ماكينة الكاش)$/i.test(c)) ||
-      cols.find((c) => /^(acceptor1|acceptor_1|acceptor 1)$/i.test(c)) ||
+      cols.find((c) => /^(acceptor1|acceptor_1|acceptor 1|acceptor)$/i.test(c)) ||
       cols.find((c) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(c)) ||
       cols[0] ||
       '';
     activeAcc =
       cols.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش|رقم المندوب الكاش)$/i.test(c)) ||
-      cols.find((c) => /^(acceptor2|acceptor_2|acceptor 2)$/i.test(c)) ||
+      cols.find((c) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor)$/i.test(c)) ||
       cols.find((c) => /حساب|كود|account|acc|code|doner|donor/i.test(c)) ||
+      cols.find((c) => c !== activeM) ||
       cols[1] ||
       cols[0] ||
       '';
+    if (activeAcc === activeM && cols.length > 1) {
+      activeAcc = cols.find((c) => c !== activeM) || activeAcc;
+    }
     activeRep =
       cols.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم المندوب الكاش)$/i.test(c)) ||
       cols.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c)) ||
-      cols[1] ||
-      cols[0] ||
-      '';
+      activeAcc;
   }
 
   // Auto-generate Sheet 1 (Machines) in worker if Sheet 1 does not exist yet!

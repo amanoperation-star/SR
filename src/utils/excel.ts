@@ -88,14 +88,28 @@ export function selectColumnsToKeep(
   // 3. Machines sheet:
   if (targetType === 'machines') {
     const mIdx = normalizedHeaders.findIndex((h) => /^(ماكينة|رقم الماكينة|جهاز|pos|machine|sn|id)$/i.test(h));
-    const resolvedMIdx = mIdx !== -1 ? mIdx : normalizedHeaders.findIndex((h) => /ماكينة|جهاز|pos|machine|sn|id/i.test(h));
+    const resolvedMIdx = mIdx !== -1 ? mIdx : normalizedHeaders.findIndex((h) => /ماكينة|جهاز|pos|machine|sn|id|كود|terminal/i.test(h));
     if (resolvedMIdx !== -1) {
-      return { indices: [resolvedMIdx], headers: [normalizedHeaders[resolvedMIdx]] };
+      const keep: { idx: number; name: string }[] = [{ idx: resolvedMIdx, name: normalizedHeaders[resolvedMIdx] }];
+      normalizedHeaders.forEach((h, idx) => {
+        if (idx !== resolvedMIdx && /فرع|منطقة|محافظة|نوع|تبويب|تصنيف|قسم|حالة|branch|area|type|category/i.test(h)) {
+          keep.push({ idx, name: h });
+        }
+      });
+      return { indices: keep.map((k) => k.idx), headers: keep.map((k) => k.name) };
     }
+    // Keep all columns if no specific machine header matched
+    return {
+      indices: normalizedHeaders.map((_, i) => i),
+      headers: normalizedHeaders,
+    };
   }
 
-  // Default Fallback - return nothing to ensure strict filtering
-  return { indices: [], headers: [] };
+  // Fallback: return all headers to avoid dropping user data
+  return {
+    indices: normalizedHeaders.map((_, i) => i),
+    headers: normalizedHeaders,
+  };
 }
 
 export async function parseExcelFile(
@@ -336,19 +350,38 @@ export async function parseExcelFileLocal(
     return result;
   };
 
-  let targetSheetName = workbook.SheetNames[0];
-  let ws = workbook.Sheets[targetSheetName];
-  let bestRows = await extractRowsFromWorksheet(ws, targetType);
+  let bestRows: SheetRow[] = [];
 
-  if (bestRows.length === 0 && workbook.SheetNames.length > 1) {
-    for (let i = 1; i < workbook.SheetNames.length; i++) {
+  if (targetType === 'machines' && workbook.SheetNames.length > 1) {
+    // Process all sheets and combine them
+    for (let i = 0; i < workbook.SheetNames.length; i++) {
       const sName = workbook.SheetNames[i];
-      const candidateWs = workbook.Sheets[sName];
-      if (!candidateWs || !candidateWs['!ref']) continue;
-      const candidateRows = await extractRowsFromWorksheet(candidateWs, targetType);
-      if (candidateRows.length > 0) {
-        bestRows = candidateRows;
-        break;
+      const sWs = workbook.Sheets[sName];
+      if (!sWs || !sWs['!ref']) continue;
+
+      const sLower = sName.toLowerCase().trim();
+      const isSheetCash = /كاش|cash/i.test(sLower);
+      const isSheetPay = /مدفوع|payment/i.test(sLower);
+      const sTabType = isSheetCash ? 'cash' : isSheetPay ? 'payments' : undefined;
+
+      const rows = await extractRowsFromWorksheet(sWs, sTabType || targetType);
+      bestRows.push(...rows);
+    }
+  } else {
+    let targetSheetName = workbook.SheetNames[0];
+    let ws = workbook.Sheets[targetSheetName];
+    bestRows = await extractRowsFromWorksheet(ws, targetType);
+
+    if (bestRows.length === 0 && workbook.SheetNames.length > 1) {
+      for (let i = 1; i < workbook.SheetNames.length; i++) {
+        const sName = workbook.SheetNames[i];
+        const candidateWs = workbook.Sheets[sName];
+        if (!candidateWs || !candidateWs['!ref']) continue;
+        const candidateRows = await extractRowsFromWorksheet(candidateWs, targetType);
+        if (candidateRows.length > 0) {
+          bestRows = candidateRows;
+          break;
+        }
       }
     }
   }

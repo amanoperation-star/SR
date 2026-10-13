@@ -12,12 +12,30 @@ export interface ZipFileInfo {
 
 export function isZipFile(file: File): boolean {
   if (!file) return false;
-  const name = file.name.toLowerCase();
+  const name = (file.name || '').toLowerCase().trim();
+
+  // CRITICAL: Any Excel or CSV spreadsheet (.xlsx, .xls, .csv, .xlsm, .xlsb, .tsv, .txt)
+  // must NEVER be treated as a ZIP archive of multiple files, even if its MIME type is application/zip
+  // (because XLSX files are OpenXML packages that browsers often flag as application/zip).
+  if (
+    name.endsWith('.xlsx') ||
+    name.endsWith('.xls') ||
+    name.endsWith('.csv') ||
+    name.endsWith('.xlsm') ||
+    name.endsWith('.xlsb') ||
+    name.endsWith('.tsv') ||
+    name.endsWith('.txt')
+  ) {
+    return false;
+  }
+
   return (
     name.endsWith('.zip') ||
-    file.type === 'application/zip' ||
-    file.type === 'application/x-zip-compressed' ||
-    file.type === 'multipart/x-zip'
+    name.endsWith('.zipx') ||
+    (!!file.type &&
+      (file.type === 'application/zip' ||
+        file.type === 'application/x-zip-compressed' ||
+        file.type === 'multipart/x-zip'))
   );
 }
 
@@ -46,6 +64,21 @@ export async function inspectZipFile(file: File): Promise<ZipFileInfo[]> {
 
 export async function inspectZipFileLocal(file: File): Promise<ZipFileInfo[]> {
   const zip = await JSZip.loadAsync(file);
+
+  // If this archive contains xl/workbook.xml or [Content_Types].xml, it is an Excel spreadsheet directly!
+  if (zip.file('xl/workbook.xml') || zip.file('[Content_Types].xml')) {
+    return [
+      {
+        path: '__DIRECT_XLSX__',
+        name: file.name.replace(/\.zip$/i, '') || 'workbook.xlsx',
+        size: file.size,
+        date: new Date(file.lastModified || Date.now()),
+        extension: 'xlsx',
+        isSupportedSheet: true,
+      },
+    ];
+  }
+
   const items: ZipFileInfo[] = [];
 
   zip.forEach((relativePath, zipEntry) => {
@@ -60,7 +93,7 @@ export async function inspectZipFileLocal(file: File): Promise<ZipFileInfo[]> {
 
     const extMatch = fileName.match(/\.([^.]+)$/);
     const extension = extMatch ? extMatch[1].toLowerCase() : '';
-    const isSupportedSheet = ['csv', 'xlsx', 'xls'].includes(extension);
+    const isSupportedSheet = ['csv', 'xlsx', 'xls', 'xlsm', 'xlsb', 'tsv', 'txt'].includes(extension);
 
     // Uncompressed size if available, fallback to 0
     // @ts-ignore: _data may exist or default to 0
@@ -97,6 +130,9 @@ export async function extractFileFromZip(zipFile: File, relativePath: string): P
 }
 
 export async function extractFileFromZipLocal(zipFile: File, relativePath: string): Promise<File> {
+  if (relativePath === '__DIRECT_XLSX__') {
+    return zipFile;
+  }
   const zip = await JSZip.loadAsync(zipFile);
   const entry = zip.file(relativePath);
 

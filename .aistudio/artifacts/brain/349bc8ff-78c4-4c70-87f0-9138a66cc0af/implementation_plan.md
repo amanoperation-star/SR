@@ -1,89 +1,15 @@
-# خطة عمل: القضاء على تجميد الشاشة أثناء اعتماد وتثبيت شيت المدفوعات والكاش (+1.6 مليون سجل)
+# Implementation Plan - Restrict Reconciliation to Uploaded Machines Sheet
 
----
+## Problem
+When the user uploads only the machines sheet (`s1`), the system previously synthesized extra machines from payment and cash sheets (`repMap`), causing machines not in the uploaded sheet to appear or be searched. The user wants: **"Only show machines that exist in the uploaded sheet"**.
 
-## 1. الأهداف ورغبات المستخدم (User Directives)
-بناءً على طلب المستخدم وإجاباته التوجيهية:
-1. **عزل كامل لعملية الاعتماد في الخلفية**: نقل كافة عمليات اعتماد وتثبيت شيت المدفوعات وشيت الكاش (سواء من الرفع المباشر أو من نافذة المعالج العملاق Big File Splitter) إلى مسار **Web Worker** خلفي مستقل تماماً، لمنع أي تجميد للـ Main UI Thread.
-2. **معاينة خفيفة ذكية (Smart 50-Row Preview)**: عرض أول 50 سجلاً فقط في جداول المعاينة التفاعلية داخل واجهة المستخدم، مع حفظ كامل السجلات المليونية (+1.6M) في مخزن ذاكرة مُجزأ عالي الأداء (`chunkCache` / Memory Store)، لتجنب إدخال ملايين الكائنات داخل `useState` الخاص بـ React، وهو المسبب الرئيسي لتجميد المتصفح لعدة دقائق.
-3. **توليد شيت الماكينات والمطابقة في الخلفية**: نقل دوال مثل `ensureSheet1Exists` وحصر الماكينات والمطابقة الأولية إلى الـ Web Worker لتتم بسلاسة وسرعة فائقة دون توقف المتصفح.
-4. **تحديث شريط التقدم اللحظي**: عرض نسبة مئوية سلسة وعدد السجلات المعالجة أثناء الاعتماد دون أي تقطيع في الرسوميات.
+## Proposed Changes
 
----
+### 1. Update `executeReconciliation` in `src/App.tsx`
+- **Strict Machines Sheet Baseline**: If `s1` (machines sheet) has data (`s1.length > 0`), build `reconciliationItems` **strictly** from `s1`. Do **not** add synthetic machines from `repMap` (payment/cash sheets) for machines absent from `s1`.
+- **Fallback**: If `s1` is not uploaded (`s1.length === 0`), allow building reconciliation items from `repMap` so payment/cash sheets can still be inspected if uploaded alone.
+- This ensures that when the user uploads only the machines sheet, only the machines present in that sheet appear in the reconciliation results and searches.
 
-## 2. التحليل الفني لسبب التجميد الحالي (Root Cause Analysis)
-1. **إيداع 1.6 مليون كائن في React State (`setSheet2(rows)`)**:
-   - عند استدعاء `setSheet2(rows)` بمصفوفة تضم 1.66 مليون كائن، يقوم محرك React بتشغيل دورات Re-render ومقارنة الذاكرة والـ Garbage Collector على ملايين الكائنات، مما يستهلك عدة جيجابايت من الذاكرة اللحظية ويجمد الشاشة لمدة 2 إلى 3 دقائق.
-2. **حلقات تكرارية ثقيلة على الـ Main Thread (`ensureSheet1Exists`)**:
-   - وجود حلقة تكرارية `for (const r of currentData)` تفحص 1.6 مليون سطر وتنشئ `Map` للماكينات على مسار الـ UI، مما يعطل استجابة المتصفح تماماً.
-3. **عدم استخدام الـ Web Worker في دالة الاعتماد المباشر (`onApplyToSheet`) وفي `handleSheet2Upload`**:
-   - يتم أحياناً الاعتماد على دوال الواجهة الرئيسية بدلاً من إرسال مصفوفة البيانات إلى Worker يقوم بالفرز والحصر والتوليد.
-
----
-
-## 3. المعمارية الفنية المقترحة (Target Architecture)
-
-```
-[ملف مدفوعات / كاش (+1.6M سجل)]
-            │
-            ▼
-┌────────────────────────────────────────────────────────────────┐
-│             Web Worker الخلفي (fileProcessor.worker.ts)         │
-│  - قراءة وفك الملف (CSV / Excel / ZIP)                        │
-│  - تطبيق فلاتر الأعمدة الصارمة (acceptor1, doner1 / acceptor2) │
-│  - استخراج أول 50 سجلاً للمعاينة الفورية (Preview Sample)       │
-│  - توليد فهرس الماكينات الفريدة (Auto-Generate Machines)       │
-│  - حساب الإحصائيات (عدد السجلات، المناديب، الماكينات)           │
-│  - إرسال تقدم سلس (Progress 0% -> 100%)                       │
-└────────────────────────────────┬───────────────────────────────┘
-                                 │
-     (إرسال النتيجة عبر Transferable / Chunked Response)
-                                 │
-                                 ▼
-┌────────────────────────────────────────────────────────────────┐
-│                      واجهة المستخدم (Main Thread)              │
-│  - React State خفيف جداً:                                      │
-│      * `sheet2Preview` (50 سجل فقط - سرعة 120 FPS)            │
-│      * `sheet2Meta` (العدد الإجمالي 1,600,000، أسماء الأعمدة)   │
-│  - حفظ السجلات الكاملة في `chunkCache` (خارج React State)     │
-│  - التصدير والعمليات الضخمة تقرأ مباشرة من `chunkCache`         │
-└────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 4. خطوات التنفيذ التفصيلية (Implementation Steps)
-
-### الخطوة 1: ترقية الـ Web Worker لمعالجة الاعتماد بالكامل
-- إضافة وظيفة `APPROVE_SHEET` داخل `src/workers/fileProcessor.worker.ts`:
-  - استقبال مصفوفة السجلات أو الملف عبر الـ Worker.
-  - استخلاص أول 50 سجلاً للمعاينة المباشرة.
-  - بناء خريطة الماكينات الفريدة وتوليد شيت الماكينات التلقائي (`ensureSheet1Exists`) في الخلفية بدون أي لمس لمسار الواجهة.
-  - تقسيم السجلات إلى دفعات سريعة لحساب المؤشرات.
-
-### الخطوة 2: ترقية `workerClient.ts`
-- إضافة دالة `approveSheetWithWorker(rows, sheetType, onProgress)`:
-  - تشغيل مهمة الاعتماد في الـ Worker ونقل البيانات عبر رسائل خلفية مع تحديث نسبة الإنجاز اللحظية بسلاسة.
-
-### الخطوة 3: تحديث تخزين البيانات في `App.tsx` (Smart Memory Architecture)
-- تعديل تخزين شيت المدفوعات وشيت الكاش:
-  - تخزين السجلات الكاملة حصرياً داخل `chunkCache` عالي الكفاءة (`chunkCache.setRows('sheet2', rows)`).
-  - تخزين أول 50 سجلاً فقط في `useState` الخاص بالمعاينة (`sheet2Preview`) بدلاً من تخزين 1.6 مليون سطر كاملة في الـ State.
-  - الاحتفاظ بعدد السجلات الإجمالي (`sheet2TotalCount = 1,600,000`) لعرضه في الإحصائيات والأزرار والتقارير.
-  - تعديل دوال الحذف والمسح والتصدير لتتعامل مع المخزن الذكي بسلاسة.
-
-### الخطوة 4: تحديث اعتماد `BigFileSplitterModal` و `handleSheet2Upload` / `handleSheet3Upload`
-- تعديل زر "اعتماد وقراءة في الشيت بالمنظومة فوراً":
-  - تحويل عملية الاعتماد لتمر عبر `approveSheetWithWorker` في مسار خلفي.
-  - تحديث شريط التقدم خطوة بخطوة (استخراج الأعمدة ➔ توليد الماكينات ➔ تثبيت الذاكرة ➔ جاهز للعرض).
-  - التبديل التلقائي دون أي تجميد، وظهور جدول المعاينة فوراً (50 سجلاً) مع مؤشر يوضح أن الشيت كامل (+1.6M سجل) مثبت في الذاكرة وجاهز للمطابقة والتصدير.
-
-### الخطوة 5: التحقق والتجميع
-- تشغيل `compile_applet` و `lint_applet` والتأكد من خلو المشروع من أي أخطاء برمجية أو بطء في الأداء.
-
----
-
-## 5. مخرجات وضمانات التحديث
-1. **انعدام التجميد تماماً (Zero UI Freezing)** أثناء الضغط على اعتماد شيت المدفوعات أو شيت الكاش.
-2. **استجابة فورية للشاشة** (خفة وسرعة تامة في التمرير والانتقال بين التبويبات).
-3. **الحفاظ على كامل السجلات (1.6+ مليون)** للتصدير كـ CSV أو Excel والمطابقة الدقيقة.
+## Verification Plan
+- Compile applet with `compile_applet`.
+- Lint codebase with `lint_applet`.

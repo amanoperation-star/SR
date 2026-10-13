@@ -1,6 +1,6 @@
 {
-  "summary": "خطة عمل هندسية شاملة لمعالجة تجميد الشاشة أثناء اعتماد وتثبيت شيت المدفوعات والكاش (أكثر من 1.6 مليون سجل) عبر نقل كافة عمليات الاعتماد والمعالجة والتحليل إلى Web Worker خلفي، وتطبيق نظام المعاينة الذكية (50 سجلاً) وحفظ السجلات الكاملة في الذاكرة المنفصلة دون إرهاق React State.",
-  "updatedAt": "2026-10-12T19:55:14.685587271Z",
+  "summary": "Implementation plan for restricting reconciliation items to only machines present in the uploaded machines sheet (s1).",
+  "updatedAt": "2026-10-13T15:20:48.294565100Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -88,9 +88,11 @@ export const BigFileSplitterModal: React.FC<BigFileSplitterModalProps> = ({
         }
 
         // If exactly 1 file, extract it and continue
-        setStatusText(`جاري استخراج (${supported[0].name}) من الأرشيف...`);
-        const extracted = await extractFileFromZip(file, supported[0].path);
-        file = extracted;
+        if (supported[0]?.path !== '__DIRECT_XLSX__') {
+          setStatusText(`جاري استخراج (${supported[0].name}) من الأرشيف...`);
+          const extracted = await extractFileFromZip(file, supported[0].path);
+          file = extracted;
+        }
       } catch (err: any) {
         console.error(err);
         setErrorMessage(err.message || 'تعذر قراءة أو فك ضغط ملف ZIP.');

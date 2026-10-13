@@ -48,6 +48,7 @@ import { ProgressModal } from './components/ProgressModal';
 import { isZipFile, inspectZipFile, extractFileFromZip, ZipFileInfo } from './utils/zip';
 import { ZipFilePickerModal } from './components/ZipFilePickerModal';
 import { CompressionTipsModal } from './components/CompressionTipsModal';
+import { InstantRepInquiry } from './components/InstantRepInquiry';
 
 function normalizeMachineId(id: string | number | undefined | null): string {
   if (id === undefined || id === null) return '';
@@ -297,10 +298,11 @@ export default function App() {
         cols2.find((c) => /ماكينة|جهاز|pos|machine|sn|acceptor/i.test(c)) ||
         cols2[0];
 
-      const foundAcc =
-        cols2.find((c) => /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(c)) ||
-        cols2.find((c) => /(doner.*1|donor.*1|^doner$|^donor$|حساب.*مدفوعات|رقم.*المدفوعات)/i.test(c)) ||
-        cols2.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
+      let foundAcc =
+        cols2.find((c) => c !== foundM2 && /^(doner1|donor1|doner_1|donor_1|doner 1|donor 1|doner|donor|رقم حساب المدفوعات|حساب المدفوعات)$/i.test(c)) ||
+        cols2.find((c) => c !== foundM2 && /(doner.*1|donor.*1|^doner$|^donor$|حساب.*مدفوعات|رقم.*المدفوعات)/i.test(c)) ||
+        cols2.find((c) => c !== foundM2 && /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
+        cols2.find((c) => c !== foundM2) ||
         '';
 
       let foundRep = cols2.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c));
@@ -311,8 +313,7 @@ export default function App() {
         foundRep =
           cols2.find((c) => /(doner.*1|donor.*1|doner1|donor1|^doner$|^donor$)/i.test(c)) ||
           cols2.find((c) => /(مندوب|agent|rep|doner|donor)/i.test(c)) ||
-          cols2[1] ||
-          cols2[0];
+          foundAcc;
       }
 
       setColM2(foundM2);
@@ -330,10 +331,11 @@ export default function App() {
         cols3[0];
 
       // Specifically prioritize doner2 (رقم الكاش المدفوعات / رقم حساب الكاش)
-      const foundCashAcc =
-        cols3.find((c) => /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش)$/i.test(c)) ||
-        cols3.find((c) => /(doner.*2|donor.*2|كاش.*مدفوعات|رقم.*الكاش|حساب.*الكاش)/i.test(c)) ||
-        cols3.find((c) => /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
+      let foundCashAcc =
+        cols3.find((c) => c !== foundM3 && /^(doner2|donor2|doner_2|donor_2|doner 2|donor 2|رقم الكاش المدفوعات|رقم الكاش|حساب الكاش|رقم المندوب الكاش)$/i.test(c)) ||
+        cols3.find((c) => c !== foundM3 && /(doner.*2|donor.*2|كاش.*مدفوعات|رقم.*الكاش|حساب.*الكاش)/i.test(c)) ||
+        cols3.find((c) => c !== foundM3 && /حساب|كود|رقم.*مندوب|account|acc|code|doner|donor/i.test(c)) ||
+        cols3.find((c) => c !== foundM3) ||
         '';
 
       let foundCashRep = cols3.find((c) => /اسم.*مندوب|اسم.*العميل|اسم.*المستخدم|اسم|rep.*name|agent.*name|name/i.test(c));
@@ -344,8 +346,7 @@ export default function App() {
         foundCashRep =
           cols3.find((c) => /(doner.*2|donor.*2|doner2|donor2)/i.test(c)) ||
           cols3.find((c) => /(مندوب|agent|rep|doner|donor)/i.test(c)) ||
-          cols3[1] ||
-          cols3[0];
+          foundCashAcc;
       }
 
       setColM3(foundM3);
@@ -427,6 +428,8 @@ export default function App() {
         || s3Keys[1] || s3Keys[0] || '';
 
     // Process Sheet 2 (Payments)
+    const paymentsRepMap = new Map<string, Array<{ account: string; name: string; isMissingRepName: boolean; type: 'payment' }>>();
+
     for (let i = 0; i < s2.length; i++) {
       if (i > 0 && i % 20000 === 0) {
         setProgressState((p) => ({
@@ -479,10 +482,10 @@ export default function App() {
           }
         }
 
-        let list = repMap.get(key);
+        let list = paymentsRepMap.get(key);
         if (!list) {
           list = [];
-          repMap.set(key, list);
+          paymentsRepMap.set(key, list);
         }
         list.push({
           account: repAcc,
@@ -494,6 +497,8 @@ export default function App() {
     }
 
     // Process Sheet 3 (Cash)
+    const cashRepMap = new Map<string, Array<{ account: string; name: string; isMissingRepName: boolean; type: 'cash' }>>();
+
     for (let i = 0; i < s3.length; i++) {
       if (i > 0 && i % 20000 === 0) {
         setProgressState((p) => ({
@@ -546,10 +551,10 @@ export default function App() {
           }
         }
 
-        let list = repMap.get(key);
+        let list = cashRepMap.get(key);
         if (!list) {
           list = [];
-          repMap.set(key, list);
+          cashRepMap.set(key, list);
         }
         list.push({
           account: repAcc,
@@ -594,23 +599,85 @@ export default function App() {
     let cRowsCount = 0;
     let pRowsCount = 0;
 
+    // Build unified list of machines from s1 (keeping payments machines and cash machines distinct!)
+    const processedKeys = new Set<string>();
+    const reconciliationItems: Array<{ originalMachineId: string; machineType: 'payment' | 'cash'; row?: SheetRow; isSynthetic?: boolean }> = [];
+
+    const hasExplicitCashInS1 = s1.some((r) => {
+      const val = String(r[effectiveM1] || '').trim();
+      return r._tabType === 'cash' || val.startsWith('7-') || val.startsWith('٧-');
+    });
+
     for (let i = 0; i < s1.length; i++) {
-      if (i > 0 && i % 20000 === 0) {
+      const row = s1[i];
+      const mVal = row[effectiveM1];
+      if (mVal !== undefined && mVal !== null && mVal !== '') {
+        const rawMStr = String(mVal).trim();
+        const normKey = normalizeMachineId(rawMStr);
+        if (!normKey) continue;
+
+        const isCash = row._tabType === 'cash' || rawMStr.startsWith('7-') || rawMStr.startsWith('٧-');
+
+        if (isCash) {
+          const itemKey = `cash:${normKey}`;
+          if (!processedKeys.has(itemKey)) {
+            processedKeys.add(itemKey);
+            const displayId = rawMStr.startsWith('7-') || rawMStr.startsWith('٧-') ? rawMStr : `7-${normKey}`;
+            reconciliationItems.push({ originalMachineId: displayId, machineType: 'cash', row });
+          }
+        } else {
+          const payKey = `pay:${normKey}`;
+          if (!processedKeys.has(payKey)) {
+            processedKeys.add(payKey);
+            reconciliationItems.push({ originalMachineId: normKey, machineType: 'payment', row });
+          }
+
+          if (!hasExplicitCashInS1 && s3.length > 0) {
+            const cashKey = `cash:${normKey}`;
+            if (!processedKeys.has(cashKey)) {
+              processedKeys.add(cashKey);
+              reconciliationItems.push({ originalMachineId: `7-${normKey}`, machineType: 'cash', row, isSynthetic: true });
+            }
+          }
+        }
+      }
+    }
+
+    if (s1.length === 0) {
+      paymentsRepMap.forEach((_reps, lookupKey) => {
+        const payKey = `pay:${lookupKey}`;
+        if (!processedKeys.has(payKey)) {
+          processedKeys.add(payKey);
+          reconciliationItems.push({ originalMachineId: lookupKey, machineType: 'payment', isSynthetic: true });
+        }
+      });
+      cashRepMap.forEach((_reps, lookupKey) => {
+        const cashKey = `cash:${lookupKey}`;
+        if (!processedKeys.has(cashKey)) {
+          processedKeys.add(cashKey);
+          reconciliationItems.push({ originalMachineId: `7-${lookupKey}`, machineType: 'cash', isSynthetic: true });
+        }
+      });
+    }
+
+    for (let itemIdx = 0; itemIdx < reconciliationItems.length; itemIdx++) {
+      if (itemIdx > 0 && itemIdx % 20000 === 0) {
         setProgressState((p) => ({
           ...p,
-          percent: Math.min(96, 75 + Math.round((i / (s1.length || 1)) * 21)),
-          statusText: `ربط ومطابقة الماكينات (${i.toLocaleString('ar-EG')} من ${s1.length.toLocaleString('ar-EG')})...`,
+          percent: Math.min(96, 75 + Math.round((itemIdx / (reconciliationItems.length || 1)) * 21)),
+          statusText: `ربط ومطابقة الماكينات (${itemIdx.toLocaleString('ar-EG')} من ${reconciliationItems.length.toLocaleString('ar-EG')})...`,
         }));
         await yieldToMain();
       }
-      const row = s1[i];
-      const mVal = row[effectiveM1];
-      if (mVal === undefined || mVal === null || mVal === '') continue;
-
-      const originalMachineId = String(mVal).trim();
+      const item = reconciliationItems[itemIdx];
+      const originalMachineId = item.originalMachineId;
       const lookupKey = normalizeMachineId(originalMachineId);
-      const reps = repMap.get(lookupKey);
-      const count = reps ? reps.length : 0;
+
+      const reps = item.machineType === 'payment'
+        ? (paymentsRepMap.get(lookupKey) || [])
+        : (cashRepMap.get(lookupKey) || []);
+
+      const count = reps.length;
 
       let status: 'single' | 'multi' | 'none' = 'none';
       if (count === 1) {
@@ -623,52 +690,44 @@ export default function App() {
         nCount++;
       }
 
-      // Check if machine starts with 7- or matches a cash representative
-      const isCashMachine = originalMachineId.startsWith('7-') || originalMachineId.startsWith('٧-') || (reps ? reps.some(r => r.type === 'cash') : false);
-      const cleanMachineId = lookupKey;
-
       if (summaries.length < 5000) {
         summaries.push({
-          index: i + 1,
+          index: itemIdx + 1,
           machine: originalMachineId,
           repCount: count,
-          reps: reps || [],
+          reps,
           status,
         });
       }
 
       if (count === 0) {
         rowCounter++;
-        const isVacantCash = row._tabType === 'cash' || isCashMachine;
-        if (isVacantCash) {
+        if (item.machineType === 'cash') {
           cRowsCount++;
         } else {
           pRowsCount++;
         }
-        const vacantMachineDisplay = isVacantCash
-          ? (originalMachineId.startsWith('7-') || originalMachineId.startsWith('٧-') ? originalMachineId : `7-${cleanMachineId}`)
-          : cleanMachineId;
 
         flatRows.push({
           id: `r-${rowCounter}`,
-          machine: vacantMachineDisplay,
+          machine: originalMachineId,
           account: 'غير متوفر',
           repName: fallbackVal,
           repOrder: 0,
           totalRepsForMachine: 0,
           status: 'none',
-          machineGroupIndex: i + 1,
+          machineGroupIndex: itemIdx + 1,
           isFirstOfGroup: true,
           isLastOfGroup: true,
           isMissingRepName: true,
-          type: isVacantCash ? 'cash' : 'payment',
+          type: item.machineType,
         });
       } else {
         for (let rIdx = 0; rIdx < count; rIdx++) {
           rowCounter++;
-          const r = reps![rIdx];
+          const r = reps[rIdx];
 
-          if (r.type === 'cash') {
+          if (item.machineType === 'cash') {
             cRowsCount++;
           } else {
             pRowsCount++;
@@ -677,23 +736,19 @@ export default function App() {
             mRowsCount++;
           }
 
-          const repMachineId = r.type === 'payment'
-            ? cleanMachineId
-            : (cleanMachineId.startsWith('7-') || cleanMachineId.startsWith('٧-') ? cleanMachineId : `7-${cleanMachineId}`);
-
           flatRows.push({
             id: `r-${rowCounter}`,
-            machine: repMachineId,
+            machine: originalMachineId,
             account: r.account,
             repName: r.name,
             repOrder: rIdx + 1,
             totalRepsForMachine: count,
             status,
-            machineGroupIndex: i + 1,
+            machineGroupIndex: itemIdx + 1,
             isFirstOfGroup: rIdx === 0,
             isLastOfGroup: rIdx === count - 1,
             isMissingRepName: r.isMissingRepName,
-            type: r.type,
+            type: item.machineType,
           });
         }
       }
@@ -786,33 +841,8 @@ export default function App() {
     setProgressState((p) => ({ ...p, isOpen: false }));
   };
 
-  // Helper to ensure Sheet 1 exists or auto-generate it from Payments/Cash if uploaded first
-  const ensureSheet1Exists = (currentData: SheetRow[], mCol: string) => {
-    if (sheet1.length > 0) return sheet1;
-    const machineMap = new Map<string, SheetRow>();
-    const limit = Math.min(currentData.length, 60000);
-    for (let i = 0; i < limit; i++) {
-      const r = currentData[i];
-      if (!r) continue;
-      const mVal = r[mCol];
-      if (mVal !== undefined && mVal !== null) {
-        const mStr = String(mVal).trim();
-        if (mStr && !machineMap.has(mStr)) {
-          machineMap.set(mStr, {
-            [colM1 || 'رقم الماكينة']: mStr,
-            _tabType: mStr.startsWith('7-') || mStr.startsWith('٧-') ? 'cash' : 'payments'
-          });
-        }
-      }
-    }
-    const autoS1 = Array.from(machineMap.values());
-    if (autoS1.length > 0) {
-      setSheet1(autoS1);
-      setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
-      const cash = autoS1.filter(r => r._tabType === 'cash').length;
-      setSheet1Counts({ total: autoS1.length, cash, payments: autoS1.length - cash });
-      return autoS1;
-    }
+  // Helper to get Sheet 1 (strictly does not auto-populate Sheet 1 from Payments or Cash)
+  const ensureSheet1Exists = (_currentData: SheetRow[], _mCol: string) => {
     return sheet1;
   };
 
@@ -836,8 +866,10 @@ export default function App() {
           });
           return;
         }
-        const extracted = await extractFileFromZip(file, supported[0].path);
-        file = extracted;
+        if (supported[0]?.path !== '__DIRECT_XLSX__') {
+          const extracted = await extractFileFromZip(file, supported[0].path);
+          file = extracted;
+        }
       } catch (err: any) {
         showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
         return;
@@ -880,6 +912,7 @@ export default function App() {
       if (activeM1) setColM1(activeM1);
 
       let cash = 0;
+      let payments = 0;
       const mCol = activeM1 || colM1 || (data[0] ? Object.keys(data[0])[0] : '');
       if (mCol && data) {
         const len = data.length;
@@ -887,11 +920,25 @@ export default function App() {
           const r = data[i];
           if (r) {
             const rawVal = r[mCol];
-            if (rawVal !== undefined && rawVal !== null) {
-              const strVal = String(rawVal);
-              const c = strVal.charCodeAt(0);
-              if (r._tabType === 'cash' || c === 55 || c === 1639) {
-                cash++;
+            const strVal = rawVal !== undefined && rawVal !== null ? String(rawVal).trim() : '';
+            const c = strVal.charCodeAt(0);
+            const isCash =
+              r._tabType === 'cash' ||
+              c === 55 ||
+              c === 1639 ||
+              strVal.startsWith('7-') ||
+              strVal.startsWith('٧-') ||
+              strVal.startsWith('7') ||
+              strVal.startsWith('٧') ||
+              Object.values(r).some((v) => /كاش|cash/i.test(String(v)));
+
+            if (isCash) {
+              cash++;
+              r._tabType = 'cash';
+            } else {
+              payments++;
+              if (!r._tabType || r._tabType === 'machines') {
+                r._tabType = 'payments';
               }
             }
           }
@@ -900,7 +947,7 @@ export default function App() {
       setSheet1Counts({
         total: data.length,
         cash,
-        payments: data.length - cash
+        payments: data.length - cash,
       });
 
       setSheet1(data);
@@ -939,8 +986,10 @@ export default function App() {
           });
           return;
         }
-        const extracted = await extractFileFromZip(file, supported[0].path);
-        file = extracted;
+        if (supported[0]?.path !== '__DIRECT_XLSX__') {
+          const extracted = await extractFileFromZip(file, supported[0].path);
+          file = extracted;
+        }
       } catch (err: any) {
         showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
         return;
@@ -1004,15 +1053,6 @@ export default function App() {
       setSheet2TotalCount(res.totalCount);
       setSheet2FileName(file.name);
 
-      // Auto-generate Sheet 1 (Machines) if not present yet
-      if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
-        setSheet1(res.autoSheet1);
-        setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
-        if (res.autoSheet1Counts) {
-          setSheet1Counts(res.autoSheet1Counts);
-        }
-      }
-
       setProgressState((p) => ({
         ...p,
         percent: 100,
@@ -1047,8 +1087,10 @@ export default function App() {
           });
           return;
         }
-        const extracted = await extractFileFromZip(file, supported[0].path);
-        file = extracted;
+        if (supported[0]?.path !== '__DIRECT_XLSX__') {
+          const extracted = await extractFileFromZip(file, supported[0].path);
+          file = extracted;
+        }
       } catch (err: any) {
         showToast('❌ تعذر فحص أو فك ضغط ملف ZIP: ' + (err?.message || ''));
         return;
@@ -1111,15 +1153,6 @@ export default function App() {
       setSheet3(res.previewRows);
       setSheet3TotalCount(res.totalCount);
       setSheet3FileName(file.name);
-
-      // Auto-generate Sheet 1 (Machines) if not present yet
-      if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
-        setSheet1(res.autoSheet1);
-        setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
-        if (res.autoSheet1Counts) {
-          setSheet1Counts(res.autoSheet1Counts);
-        }
-      }
 
       setProgressState((p) => ({
         ...p,
@@ -1205,6 +1238,13 @@ export default function App() {
       });
     }
     showToast('🗑️ تم حذف وإغلاق شيت أجهزة الكاش بنجاح');
+  };
+
+  // Dedicated Inquiry sheets reset handler (clears Cash and Payments cache)
+  const handleClearInquirySheets = () => {
+    handleClearSheet2();
+    handleClearSheet3();
+    showToast('🗑️ تم مسح بيانات شيتات الكاش والمدفوعات من الذاكرة بنجاح');
   };
 
   // Instant Sample Demo
@@ -1566,13 +1606,18 @@ export default function App() {
     const mCol = colM1 || (sheet1[0] ? Object.keys(sheet1[0])[0] : '');
     if (!mCol) return [];
 
-    const maxScan = Math.min(sheet1.length, 5000); // Guard to prevent freezing on 1.6M rows!
+    const maxScan = Math.min(sheet1.length, 100000);
     for (let i = 0; i < maxScan; i++) {
       const r = sheet1[i];
       if (!r) continue;
       const val = r[mCol];
-      const strVal = val !== undefined && val !== null ? String(val) : '';
-      const isCash = r._tabType === 'cash' || strVal[0] === '7' || strVal[0] === '٧';
+      const strVal = val !== undefined && val !== null ? String(val).trim() : '';
+      const isCash =
+        r._tabType === 'cash' ||
+        strVal.startsWith('7-') ||
+        strVal.startsWith('٧-') ||
+        strVal.startsWith('7') ||
+        strVal.startsWith('٧');
 
       if (sheet1PreviewFilter === 'all') {
         list.push(r);
@@ -1836,7 +1881,30 @@ export default function App() {
         onApplySheet1={(data) => {
           setSheet1(data);
           setSheet1FileName('شيت_الماكينات_المعدل_يدوياً');
-          showToast(`✅ تم اعتماد ${data.length} ماكينة من محرر القوالب.`);
+          const mCol = colM1 || Object.keys(data[0] || {})[0] || 'رقم الماكينة';
+          let cash = 0;
+          for (let i = 0; i < data.length; i++) {
+            const r = data[i];
+            const val = String(r[mCol] || '').trim();
+            const isCash =
+              r._tabType === 'cash' ||
+              val.startsWith('7-') ||
+              val.startsWith('٧-') ||
+              val.startsWith('7') ||
+              val.startsWith('٧');
+            if (isCash) {
+              cash++;
+              r._tabType = 'cash';
+            } else {
+              if (!r._tabType || r._tabType === 'machines') r._tabType = 'payments';
+            }
+          }
+          setSheet1Counts({
+            total: data.length,
+            cash,
+            payments: data.length - cash,
+          });
+          showToast(`✅ تم اعتماد ${data.length} ماكينة (${cash} كاش، ${data.length - cash} مدفوعات) من محرر القوالب.`);
           if (sheet2.length > 0 || sheet3.length > 0) {
             executeReconciliation(data, sheet2, sheet3, colM1 || 'رقم الماكينة', colM2 || 'رقم الماكينة', colAcc, colRep, colM3 || 'رقم الماكينة', colCashAcc, colCashRep, emptyRepFallback);
           }
@@ -1907,7 +1975,7 @@ export default function App() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-6 relative z-10 font-['Cairo']">
         {/* Navigation Tabs - Modern Cards Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2.5 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-2.5 sm:gap-3">
           {/* Card 1: Sheet 1 */}
           <button
             onClick={() => setCurrentTab(1)}
@@ -2280,6 +2348,61 @@ export default function App() {
               <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/70 rounded-full mx-3 mb-0.5" />
             )}
           </button>
+
+          {/* Card 8: Direct Rep & Machine Inquiry Hub */}
+          <button
+            onClick={() => setCurrentTab(8)}
+            className={`p-3 sm:p-3.5 rounded-2xl border text-right transition-all duration-200 flex flex-col justify-between gap-2.5 cursor-pointer group relative overflow-hidden ${
+              currentTab === 8
+                ? 'bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-600/30 ring-2 ring-purple-400/40'
+                : 'bg-white dark:bg-[#0a0f1d] border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-purple-400/60 hover:bg-slate-50 dark:hover:bg-[#0e1628]'
+            }`}
+          >
+            <div className="flex items-center justify-between w-full">
+              <span
+                className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-md ${
+                  currentTab === 8
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                08
+              </span>
+              <div
+                className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                  currentTab === 8
+                    ? 'bg-white/20 text-white'
+                    : 'bg-purple-500/10 text-purple-500 dark:text-purple-400 group-hover:bg-purple-500/20'
+                }`}
+              >
+                <Search className="w-4 h-4" />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between gap-1">
+                <h4
+                  className={`text-xs font-bold leading-tight ${
+                    currentTab === 8 ? 'text-white' : 'text-slate-900 dark:text-white'
+                  }`}
+                >
+                  8. استعلام المندوب
+                </h4>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" title="جاهز للاستعلام" />
+              </div>
+              <p
+                className={`text-[10px] mt-1 font-medium truncate ${
+                  currentTab === 8 ? 'text-purple-100 font-bold' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                كاش ومدفوعات
+              </p>
+            </div>
+
+            {currentTab === 8 && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/70 rounded-full mx-3 mb-0.5" />
+            )}
+          </button>
         </div>
 
         {/* TAB 1: Sheet 1 Upload */}
@@ -2531,7 +2654,13 @@ export default function App() {
                             filteredPreviewRows.map((row, idx) => {
                               const mCol = colM1 || Object.keys(row)[0];
                               const machineVal = String(row[mCol] || '').trim();
-                              const isCash = row._tabType === 'cash' || (row._tabType !== 'payments' && (machineVal.startsWith('7-') || machineVal.startsWith('٧-')));
+                              const isCash =
+                                row._tabType === 'cash' ||
+                                (row._tabType !== 'payments' &&
+                                  (machineVal.startsWith('7-') ||
+                                    machineVal.startsWith('٧-') ||
+                                    machineVal.startsWith('7') ||
+                                    machineVal.startsWith('٧')));
                               return (
                                 <tr key={idx} className="hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
                                   <td className="p-2 text-center text-slate-400 font-bold">{idx + 1}</td>
@@ -2543,7 +2672,7 @@ export default function App() {
                                   <td className="p-2 text-center">
                                     {isCash ? (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                                        💵 ماكينة كاش (7-)
+                                        💵 ماكينة كاش
                                       </span>
                                     ) : (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
@@ -2723,21 +2852,25 @@ export default function App() {
                     </div>
                   </div>
 
-                  {sheet1.length === 0 && (
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-amber-600 dark:text-amber-300 animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <CircleAlert className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span>✅ تم رفع واعتماد شيت المدفوعات بنجاح! للمطابقة ومعرفة مناديب الماكينات، يرجى رفع شيت الماكينات (الخطوة 01).</span>
-                      </div>
-                      <button
-                        onClick={() => setCurrentTab(1)}
-                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
-                      >
-                        <span>الانتقال لرفع شيت الماكينات (01)</span>
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  {/* Instant Representative & Machines Inquiry Hub (Direct Query on Sheet 2 & 3) */}
+                  <InstantRepInquiry
+                    sheet2Count={effectiveSheet2Count}
+                    sheet3Count={effectiveSheet3Count}
+                    sheet2FileName={sheet2FileName}
+                    sheet3FileName={sheet3FileName}
+                    colM2={colM2}
+                    colAcc={colAcc}
+                    colRep={colRep}
+                    colM3={colM3}
+                    colCashAcc={colCashAcc}
+                    colCashRep={colCashRep}
+                    onOpenFullLookup={(query) => {
+                      setRepLookupQuery(query || '');
+                      setIsRepLookupOpen(true);
+                    }}
+                    onClearInquirySheets={handleClearInquirySheets}
+                    showToast={showToast}
+                  />
 
                   {/* Live Sheet 2 Preview Table */}
                   <div className="bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
@@ -2954,21 +3087,25 @@ export default function App() {
                     </div>
                   </div>
 
-                  {sheet1.length === 0 && (
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-amber-600 dark:text-amber-300 animate-in fade-in">
-                      <div className="flex items-center gap-2">
-                        <CircleAlert className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span>✅ تم رفع واعتماد شيت الكاش بنجاح! للمطابقة ومعرفة مناديب الماكينات، يرجى رفع شيت الماكينات (الخطوة 01).</span>
-                      </div>
-                      <button
-                        onClick={() => setCurrentTab(1)}
-                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-md transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
-                      >
-                        <span>الانتقال لرفع شيت الماكينات (01)</span>
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
+                  {/* Instant Representative & Machines Inquiry Hub (Direct Query on Sheet 2 & 3) */}
+                  <InstantRepInquiry
+                    sheet2Count={effectiveSheet2Count}
+                    sheet3Count={effectiveSheet3Count}
+                    sheet2FileName={sheet2FileName}
+                    sheet3FileName={sheet3FileName}
+                    colM2={colM2}
+                    colAcc={colAcc}
+                    colRep={colRep}
+                    colM3={colM3}
+                    colCashAcc={colCashAcc}
+                    colCashRep={colCashRep}
+                    onOpenFullLookup={(query) => {
+                      setRepLookupQuery(query || '');
+                      setIsRepLookupOpen(true);
+                    }}
+                    onClearInquirySheets={handleClearInquirySheets}
+                    showToast={showToast}
+                  />
 
                   {/* Smart Helper Card */}
                   <div className="p-4 rounded-xl bg-slate-800/20 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -4311,6 +4448,31 @@ export default function App() {
             }}
           />
         )}
+
+        {/* TAB 8: Dedicated Rep & Machine Direct Inquiry Hub */}
+        {currentTab === 8 && (
+          <div className="space-y-4">
+            <InstantRepInquiry
+              sheet2Count={effectiveSheet2Count}
+              sheet3Count={effectiveSheet3Count}
+              sheet2FileName={sheet2FileName}
+              sheet3FileName={sheet3FileName}
+              colM2={colM2}
+              colAcc={colAcc}
+              colRep={colRep}
+              colM3={colM3}
+              colCashAcc={colCashAcc}
+              colCashRep={colCashRep}
+              onOpenFullLookup={(query) => {
+                setRepLookupQuery(query || '');
+                setIsRepLookupOpen(true);
+              }}
+              onClearInquirySheets={handleClearInquirySheets}
+              showToast={showToast}
+              isStandaloneTab={true}
+            />
+          </div>
+        )}
       </main>
 
       {/* Bulk Floating Action Bar */}
@@ -4394,15 +4556,6 @@ export default function App() {
               if (res.detectedCols.activeM) setColM3(res.detectedCols.activeM);
               if (res.detectedCols.activeAcc) setColCashAcc(res.detectedCols.activeAcc);
               if (res.detectedCols.activeRep) setColCashRep(res.detectedCols.activeRep);
-            }
-
-            // 4. Auto-generate Sheet 1 (Machines) if not present yet
-            if (sheet1.length === 0 && res.autoSheet1 && res.autoSheet1.length > 0) {
-              setSheet1(res.autoSheet1);
-              setSheet1FileName('تم إنشاؤه تلقائياً من المرفق');
-              if (res.autoSheet1Counts) {
-                setSheet1Counts(res.autoSheet1Counts);
-              }
             }
 
             setProgressState((prev) => ({
